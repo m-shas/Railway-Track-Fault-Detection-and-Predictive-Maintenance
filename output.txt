@@ -1,0 +1,329 @@
+======================================================================
+RAILWAY TRACK FAULT DETECTION - DATA PREPROCESSING
+======================================================================
+
+======================================================================
+STEP 1: LOADING DATASETS
+======================================================================
+
+--- Loading RT_PLC_RSFPD.csv ---
+✓ Successfully loaded PLC data
+  Shape: (5000, 32)
+  Columns: 32
+
+--- Loading vibration_raw.csv ---
+✓ Successfully loaded vibration data (first 50000 rows)
+  Shape: (50000, 18)
+  Columns: 18
+
+--- Loading Sensor Vibration Files ---
+✓ Found 67 CSV sensor files
+✓ Loaded 10 sensor files
+  Combined shape: (24453, 11)
+
+======================================================================
+STEP 2: DATA INSPECTION
+======================================================================
+
+--- RT_PLC_RSFPD Dataset ---
+Shape: (5000, 32)
+
+Columns: ['Timestamp', 'Track_Block_ID', 'Sensor_ID', 'Voltage_V', 'Current_A', 'Temperature_C', 'Vibration_m_s2', 'Relay_Status', 'Timer_TON_ms', 'Timer_TCH_ms', 'JK_FlipFlop_Q', 'Signal_Output_Q0', 'Override_Flag_ATC', 'Occupancy_State', 'Signal_Transition_Delay_ms', 'Block_Clearance_Time_s', 'Train_Headway_s', 'Ambient_Temp_C', 'Humidity_percent', 'Dust_Index_ppm', 'Track_Resistance_Ohm', 'PLC_CPU_Load_percent', 'HMI_Alert_Code', 'Failure_Type', 'Component_Age_days', 'Maintenance_Action', 'RUL_Predicted_days', 'Edge_Anomaly_Score', 'Cloud_Health_Index', 'Predicted_Failure_Prob', 'Location_ID', 'Operator_ID']
+
+Data Types:
+Timestamp                      object
+Track_Block_ID                 object
+Sensor_ID                      object
+Voltage_V                     float64
+Current_A                     float64
+Temperature_C                 float64
+Vibration_m_s2                float64
+Relay_Status                    int64
+Timer_TON_ms                  float64
+Timer_TCH_ms                  float64
+JK_FlipFlop_Q                   int64
+Signal_Output_Q0                int64
+Override_Flag_ATC               int64
+Occupancy_State                object
+Signal_Transition_Delay_ms    float64
+Block_Clearance_Time_s        float64
+Train_Headway_s               float64
+Ambient_Temp_C                float64
+Humidity_percent              float64
+Dust_Index_ppm                float64
+Track_Resistance_Ohm          float64
+PLC_CPU_Load_percent          float64
+HMI_Alert_Code                 object
+Failure_Type                   object
+Component_Age_days              int64
+Maintenance_Action             object
+RUL_Predicted_days            float64
+Edge_Anomaly_Score            float64
+Cloud_Health_Index            float64
+Predicted_Failure_Prob        float64
+Location_ID                    object
+Operator_ID                    object
+dtype: object
+
+Missing Values:
+Series([], dtype: int64)
+Duplicated Rows: 0
+
+First 3 rows:
+             Timestamp Track_Block_ID  ... Location_ID  Operator_ID
+0  2025-01-01 00:00:00             B7  ...          L1           O4
+1  2025-01-01 00:00:01            B20  ...          L5           O5
+2  2025-01-01 00:00:02            B15  ...          L1          O10
+
+[3 rows x 32 columns]
+
+--- Vibration Raw Dataset ---
+Shape: (50000, 18)
+
+Columns: ['TIMESTAMP', 'LATITUDE', 'LONGITUDE', 'ALTITUDE', 'ACCEL_X', 'ACCEL_Y', 'ACCEL_Z', 'GYRO_X', 'GYRO_Y', 'GYRO_Z', 'MAG_X', 'MAG_Y', 'MAG_Z', 'HEADING', 'LUMINOSITY', 'TEMPERATURE', 'HUMIDITY', 'PRESSURE']
+
+Data Types:
+TIMESTAMP       object
+LATITUDE       float64
+LONGITUDE      float64
+ALTITUDE       float64
+ACCEL_X          int64
+ACCEL_Y          int64
+ACCEL_Z          int64
+GYRO_X           int64
+GYRO_Y           int64
+GYRO_Z           int64
+MAG_X          float64
+MAG_Y          float64
+MAG_Z          float64
+HEADING        float64
+LUMINOSITY       int64
+TEMPERATURE    float64
+HUMIDITY       float64
+PRESSURE       float64
+dtype: object
+
+Missing Values:
+Series([], dtype: int64)
+Duplicated Rows: 0
+
+First 3 rows:
+                  TIMESTAMP   LATITUDE  LONGITUDE  ...  TEMPERATURE   HUMIDITY      PRESSURE  
+0  2025-05-14T06:36:36.440Z  40.401527  -3.682724  ...        22.73  80.861328  71317.234375  
+1  2025-05-14T06:36:36.440Z  40.401527  -3.682724  ...        22.73  80.861328  71317.234375  
+2  2025-05-14T06:36:36.440Z  40.401527  -3.682724  ...        22.73  80.861328  71317.234375  
+
+[3 rows x 18 columns]
+
+--- Sensor Vibration Dataset ---
+Shape: (24453, 11)
+
+Columns: ['2021-07-30  09:19:49,67,15,-0.192,0.988,-0.068', 'source_file', '2021-07-30  14:19:52,57,16,-0.192,0.992,-0.068', '2021-07-30  16:19:52,61,16,-0.184,0.988,-0.06', '2021-07-22  01:18:19,69,15,-0.188,0.988,-0.056', '2021-07-24  09:18:21,54,14,-0.18,0.984,-0.072', '2021-07-30  20:19:55,65,15,-0.188,0.988,-0.068', '2021-07-30  21:19:55,66,15,-0.192,0.98,-0.08', '2021-07-31  01:20:00,63,15,-0.184,0.984,-0.072', '2021-07-31  02:20:01,65,14,-0.188,0.984,-0.06', '2021-07-22  02:18:20,71,15,-0.192,0.988,-0.064']
+
+Data Types:
+2021-07-30  09:19:49,67,15,-0.192,0.988,-0.068    object
+source_file                                       object
+2021-07-30  14:19:52,57,16,-0.192,0.992,-0.068    object
+2021-07-30  16:19:52,61,16,-0.184,0.988,-0.06     object
+2021-07-22  01:18:19,69,15,-0.188,0.988,-0.056    object
+2021-07-24  09:18:21,54,14,-0.18,0.984,-0.072     object
+2021-07-30  20:19:55,65,15,-0.188,0.988,-0.068    object
+2021-07-30  21:19:55,66,15,-0.192,0.98,-0.08      object
+2021-07-31  01:20:00,63,15,-0.184,0.984,-0.072    object
+2021-07-31  02:20:01,65,14,-0.188,0.984,-0.06     object
+2021-07-22  02:18:20,71,15,-0.192,0.988,-0.064    object
+dtype: object
+
+Missing Values:
+2021-07-30  09:19:49,67,15,-0.192,0.988,-0.068    22035
+2021-07-30  14:19:52,57,16,-0.192,0.992,-0.068    21936
+2021-07-30  16:19:52,61,16,-0.184,0.988,-0.06     21977
+2021-07-22  01:18:19,69,15,-0.188,0.988,-0.056    22013
+2021-07-24  09:18:21,54,14,-0.18,0.984,-0.072     22026
+2021-07-30  20:19:55,65,15,-0.188,0.988,-0.068    21973
+2021-07-30  21:19:55,66,15,-0.192,0.98,-0.08      22066
+2021-07-31  01:20:00,63,15,-0.184,0.984,-0.072    22020
+2021-07-31  02:20:01,65,14,-0.188,0.984,-0.06     22025
+2021-07-22  02:18:20,71,15,-0.192,0.988,-0.064    22006
+dtype: int64
+Duplicated Rows: 0
+
+First 3 rows:
+   2021-07-30  09:19:49,67,15,-0.192,0.988,-0.068  ... 2021-07-22  02:18:20,71,15,-0.192,0.988,-0.064
+0  2021-07-30  09:19:50,67,15,-0.188,0.984,-0.064  ...                                        
+    NaN
+1  2021-07-30  09:19:52,67,15,-0.184,0.992,-0.064  ...                                        
+    NaN
+2  2021-07-30  09:19:53,67,15,-0.192,0.984,-0.072  ...                                        
+    NaN
+
+[3 rows x 11 columns]
+
+======================================================================
+STEP 3: DATA CLEANING
+======================================================================
+
+--- Cleaning PLC Data ---
+Missing values before cleaning: 0
+Missing values after cleaning: 0
+Shape after cleaning: (5000, 32)
+
+--- Cleaning Vibration Data ---
+Missing values before cleaning: 0
+  ACCEL_X: Removed 1 extreme outliers
+  ACCEL_Y: Removed 0 extreme outliers
+  ACCEL_Z: Removed 522 extreme outliers
+Shape after cleaning: (49477, 18)
+
+--- Cleaning Sensor Data ---
+Shape after cleaning: (2447, 12)
+
+======================================================================
+STEP 4: EXPLORATORY DATA ANALYSIS (EDA)
+======================================================================
+
+--- Failure Analysis ---
+
+Failure Type Distribution:
+Failure_Type
+C7     529
+C10    529
+C5     512
+C6     500
+C2     499
+C3     499
+C8     495
+C4     495
+C9     478
+C1     464
+Name: count, dtype: int64
+✓ Saved: analysis_output/failure_analysis.png
+
+RUL Statistics by Failure Type:
+              count        mean         std  ...         50%         75%         max
+Failure_Type                                 ...
+C1            464.0  180.015694  107.934057  ...  173.404649  280.766981  363.774369
+C10           529.0  180.683129  107.267954  ...  181.019734  274.941972  363.941225
+C2            499.0  182.662187  106.294220  ...  177.940038  279.290504  364.359814
+C3            499.0  185.749464  106.811038  ...  186.218001  277.247644  364.609052
+C4            495.0  192.752607  105.759736  ...  203.394654  284.876802  363.545471
+C5            512.0  186.186832  104.183029  ...  192.372076  272.920104  363.880662
+C6            500.0  178.094609  110.279410  ...  178.887027  276.404873  363.364091
+C7            529.0  179.707188  105.958278  ...  175.071553  276.524378  364.232507
+C8            495.0  183.213200  103.623002  ...  179.471633  274.666135  363.109689
+C9            478.0  177.310734  106.069935  ...  174.116916  267.733773  363.565644
+
+[10 rows x 8 columns]
+
+--- Sensor Correlation Analysis ---
+✓ Saved: analysis_output/correlation_matrix.png
+
+Top 10 correlations with RUL:
+RUL_Predicted_days            1.000000
+Dust_Index_ppm                0.039749
+Humidity_percent              0.027031
+Signal_Transition_Delay_ms    0.017474
+Current_A                     0.014828
+PLC_CPU_Load_percent          0.013854
+Timer_TCH_ms                  0.013753
+Predicted_Failure_Prob        0.010410
+Ambient_Temp_C                0.007425
+Temperature_C                 0.006475
+Name: RUL_Predicted_days, dtype: float64
+
+--- Time-Series Analysis ---
+✓ Saved: analysis_output/time_series_analysis.png
+
+Trend Analysis (linear regression on each sensor):
+  Vibration_m_s2: decreasing trend (slope=-0.000000, R²=0.0000)
+  Temperature_C: increasing trend (slope=0.000017, R²=0.0000)
+  Voltage_V: increasing trend (slope=0.000223, R²=0.0004)
+  Current_A: increasing trend (slope=0.000005, R²=0.0002)
+
+--- Vibration Pattern Analysis ---
+✓ Saved: analysis_output/vibration_analysis.png
+
+Vibration statistics:
+count    49477.000000
+mean      1032.951582
+std         32.712585
+min        912.474657
+25%       1010.665622
+50%       1029.673735
+75%       1052.742134
+max       1165.787288
+Name: vibration_magnitude, dtype: float64
+
+======================================================================
+STEP 5: FEATURE ENGINEERING
+======================================================================
+
+--- Engineering Features ---
+✓ Created 11 new features:
+  - vib_roll_mean
+  - vib_roll_std
+  - vib_roll_max
+  - temp_differential
+  - power_W
+  - resistance_Ohm
+  - composite_health_score
+  - hour
+  - day_of_week
+  - month
+  - is_weekend
+New shape: (5000, 43)
+
+======================================================================
+STEP 6: SAVING PROCESSED DATA
+======================================================================
+✓ Saved: processed_data/plc_processed.csv ((5000, 43))
+✓ Saved: processed_data/vibration_processed.csv ((49477, 19))
+✓ Saved: processed_data/sensor_processed.csv ((2447, 12))
+
+======================================================================
+PREPROCESSING SUMMARY REPORT
+======================================================================
+
+📊 DATASETS PROCESSED:
+   ✓ RT_PLC_RSFPD.csv - 5000 records, 32 features
+   ✓ vibration_raw.csv - 50000 records (sample), 18 features
+   ✓ sensor_vibration/ - 67 files, 24453 combined records
+
+🔧 CLEANING OPERATIONS:
+   ✓ Timestamp standardization
+   ✓ Missing value imputation (median for numeric, mode for categorical)
+   ✓ Duplicate removal
+   ✓ Outlier detection and removal (IQR method)
+
+📈 EXPLORATORY ANALYSIS:
+   ✓ Failure type distribution analysis
+   ✓ Sensor correlation matrix
+   ✓ Vibration pattern analysis
+   ✓ Time-series trend analysis
+
+🔮 FEATURE ENGINEERING:
+   ✓ Rolling statistics (mean, std, max)
+   ✓ Temperature differentials
+   ✓ Power and resistance calculations
+   ✓ Composite health scores
+   ✓ Time-based features (hour, day, month, weekend)
+
+💾 OUTPUT FILES:
+   ✓ processed_data/plc_processed.csv
+   ✓ processed_data/vibration_processed.csv
+   ✓ processed_data/sensor_processed.csv
+
+📊 VISUALIZATIONS CREATED:
+   ✓ analysis_output/failure_analysis.png
+   ✓ analysis_output/correlation_matrix.png
+   ✓ analysis_output/vibration_analysis.png
+   ✓ analysis_output/time_series_analysis.png
+
+======================================================================
+NEXT STEPS:
+1. Review the generated visualizations in 'analysis_output/' folder
+2. Examine the processed data in 'processed_data/' folder
+3. Proceed to model development for fault detection
+======================================================================
+
+✅ Data Preprocessing Complete!
