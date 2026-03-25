@@ -17,6 +17,12 @@ models/*.pt
 # Large datasets
 datasets/
 processed_data/
+data/
+
+# Old monolithic scripts (replaced by src/)
+data_preprocessing.py
+fault_detection_models.py
+f fault_detection_models.py
 
 # IDE
 .vscode/
