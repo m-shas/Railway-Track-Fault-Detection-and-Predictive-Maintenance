@@ -1,0 +1,31 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# Model files (too large for GitHub)
+models/*.pkl
+models/*.h5
+models/*.pt
+
+# Large datasets
+datasets/
+processed_data/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Output artifacts (regenerable)
+outputs/
+output.txt
