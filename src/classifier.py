@@ -118,7 +118,6 @@ def train_classifier(
     accuracy = float(accuracy_score(y_test, y_pred))
 
     print(f"  Accuracy: {accuracy:.4f}")
-    print(f"  (Expected ~10% on synthetic data — 10 random classes)")
 
     # Classification report
     report = classification_report(y_test, y_pred, output_dict=True)

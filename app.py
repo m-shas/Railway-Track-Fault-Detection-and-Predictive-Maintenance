@@ -69,7 +69,7 @@ st.sidebar.markdown("---")
 
 page = st.sidebar.radio(
     "Navigate",
-    ["Overview", "Vibration Analysis", "Track Blocks", "AI Models", "Alerts"],
+    ["Overview", "Live Monitoring", "Vibration Analysis", "Track Blocks", "AI Models", "Alerts"],
     index=0,
 )
 
@@ -133,7 +133,8 @@ if page == "Overview":
         ad = data["alert_distribution"]
         fig = px.pie(names=list(ad.keys()), values=list(ad.values()),
                      title="Alert Distribution", hole=0.4,
-                     color_discrete_sequence=["#ef4444", "#f59e0b", "#10b981"])
+                     color=list(ad.keys()),
+                     color_discrete_map={"CRITICAL": "#ef4444", "WARNING": "#f59e0b", "HEALTHY": "#10b981"})
         fig.update_layout(template="plotly_dark", height=350)
         st.plotly_chart(fig, use_container_width=True)
 
@@ -380,3 +381,160 @@ elif page == "Alerts":
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No alerts match the current filter.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE 6: LIVE MONITORING
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif page == "Live Monitoring":
+    import time
+    st.title("🔴 Live Sensor Monitoring")
+    st.markdown("Simulating real-time IoT sensor data stream and instant ML predictions. In a production environment, this dashboard subscribes to an MQTT stream directly from track-side PLC systems.")
+
+    # Load raw data for simulation
+    csv_path = os.path.join(BASE_DIR, "data", "RT_PLC_RSFPD.csv")
+    if not os.path.exists(csv_path):
+        st.error(f"Data file not found at {csv_path}. Please ensure it exists.")
+        st.stop()
+
+    df_sim = pd.read_csv(csv_path)
+    
+    # Custom CSS for the pulsing live indicator
+    st.markdown("""
+    <style>
+    .live-text {color: #ef4444; font-weight: bold; animation: blink 1.5s linear infinite;}
+    @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Initialize session state for persistence
+    if "stream_active" not in st.session_state:
+        st.session_state.stream_active = False
+    if "stream_data" not in st.session_state:
+        st.session_state.stream_data = []
+    if "recent_alerts" not in st.session_state:
+        st.session_state.recent_alerts = []
+    if "current_idx" not in st.session_state:
+        st.session_state.current_idx = np.random.randint(0, len(df_sim) - 100)
+    if "current_row" not in st.session_state:
+        st.session_state.current_row = None
+
+    # Stream controls
+    col1, col2, col3 = st.columns([1, 1, 3])
+    with col1:
+        if st.button("▶ Start Feed" if not st.session_state.stream_active else "⏹ Stop Feed"):
+            st.session_state.stream_active = not st.session_state.stream_active
+            st.rerun()
+    with col2:
+        if st.button("🔄 Reset Feed"):
+            st.session_state.stream_active = False
+            st.session_state.stream_data = []
+            st.session_state.recent_alerts = []
+            st.session_state.current_idx = np.random.randint(0, len(df_sim) - 100)
+            st.session_state.current_row = None
+            st.rerun()
+
+    if st.session_state.stream_active:
+        st.markdown('<span class="live-text">● STREAMING LIVE...</span>', unsafe_allow_html=True)
+    elif len(st.session_state.stream_data) > 0:
+        st.markdown('<span style="color:#f59e0b;font-weight:bold;">⏸ PAUSED</span>', unsafe_allow_html=True)
+    else:
+        st.info("Click 'Start Feed' to connect to the IoT data bridge.")
+        
+    # Placeholders
+    chart_placeholder = st.empty()
+    st.markdown("---")
+    metrics_placeholder = st.empty()
+    st.markdown("---")
+    alert_placeholder = st.empty()
+
+    # Function to render current static state
+    def render_current_state():
+        if not st.session_state.stream_data:
+            return
+
+        df_chart = pd.DataFrame(st.session_state.stream_data)
+        
+        # Update Chart
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(go.Scatter(y=df_chart["Vibration"], mode='lines', 
+                                 name="Vibration (m/s²)", line=dict(color="#3b82f6", width=2)), 
+                      secondary_y=False)
+        fig.add_trace(go.Scatter(y=df_chart["Temperature"], mode='lines', 
+                                 name="Temp (°C)", line=dict(color="#ef4444", width=2)), 
+                      secondary_y=True)
+        
+        fig.update_layout(template="plotly_dark", height=350, margin=dict(l=0,r=0,t=40,b=0),
+                          title="Live Sensor Telemetry: Vibration vs Temperature",
+                          xaxis=dict(showgrid=False), yaxis=dict(showgrid=False))
+        
+        chart_placeholder.plotly_chart(fig, use_container_width=True, key=f"chart_static_{st.session_state.current_idx}")
+        
+        # Update Metrics
+        if st.session_state.current_row is not None:
+            row = st.session_state.current_row
+            with metrics_placeholder.container():
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Current Block ID", row["Track_Block_ID"])
+                c2.metric("Vibration (m/s²)", f"{row['Vibration_m_s2']:.3f}")
+                c3.metric("Temp (°C)", f"{row['Temperature_C']:.1f}")
+                c4.metric("Predicted RUL", f"{row['RUL_Predicted_days']:.0f} days")
+                
+        # Update Alerts
+        with alert_placeholder.container():
+            st.subheader("Live Inference Log & Action Feed")
+            if not st.session_state.recent_alerts:
+                st.info("System healthy. Monitoring inbound telemetry for faults...")
+            for alert in st.session_state.recent_alerts:
+                st.markdown(alert, unsafe_allow_html=True)
+
+    # Initial render of persistent state
+    render_current_state()
+
+    # Simulation loop using reruns to preserve interaction
+    if st.session_state.stream_active:
+        if st.session_state.current_idx < len(df_sim):
+            row = df_sim.iloc[st.session_state.current_idx]
+            st.session_state.current_row = row
+            
+            st.session_state.stream_data.append({
+                "Time": len(st.session_state.stream_data),
+                "Vibration": row["Vibration_m_s2"],
+                "Temperature": row["Temperature_C"]
+            })
+            
+            if len(st.session_state.stream_data) > 50:
+                st.session_state.stream_data.pop(0)
+
+            prob = row["Predicted_Failure_Prob"]
+            rul = row["RUL_Predicted_days"]
+            
+            if prob > 0.75 or rul < 15:
+                level = "CRITICAL"
+                color = "#ef4444"
+            elif prob > 0.45 or rul < 60:
+                level = "WARNING"
+                color = "#f59e0b"
+            else:
+                level = "HEALTHY"
+                color = "#10b981"
+                
+            if level in ["CRITICAL", "WARNING"]:
+                alert_html = f"""
+                <div style="background:{color}22; border-left:4px solid {color}; padding:12px; margin-bottom:8px; border-radius:4px;">
+                    <strong>[{level}] Block {row['Track_Block_ID']}</strong> — AI Model detects <strong>{row['Failure_Type']}</strong>.<br>
+                    <span style="color:#8899aa; font-size: 0.9em;">Failure Prob: {prob:.2f} | Action Generated: {row['Maintenance_Action']}</span>
+                </div>
+                """
+                st.session_state.recent_alerts.insert(0, alert_html)
+                if len(st.session_state.recent_alerts) > 4:
+                    st.session_state.recent_alerts.pop()
+                    
+            st.session_state.current_idx += 1
+            time.sleep(0.5)
+            st.rerun()
+        else:
+            st.session_state.stream_active = False
+            st.info("End of dataset reached.")
+
