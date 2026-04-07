@@ -69,7 +69,8 @@ st.sidebar.markdown("---")
 
 page = st.sidebar.radio(
     "Navigate",
-    ["Overview", "Live Monitoring", "Vibration Analysis", "Track Blocks", "AI Models", "Alerts"],
+    ["Overview", "Live Monitoring", "Vibration Analysis", "Track Blocks",
+     "AI Models", "XAI Explainability", "Alerts"],
     index=0,
 )
 
@@ -317,7 +318,7 @@ elif page == "AI Models":
     # Confusion matrix
     cm = mm.get("confusion_matrix", [])
     if cm:
-        st.subheader("Confusion Matrix")
+        st.subheader("Confusion Matrix — Random Forest (Baseline)")
         labels = [f"C{i+1}" for i in range(len(cm))]
         fig = px.imshow(cm, x=labels, y=labels, text_auto=True,
                         color_continuous_scale="Blues",
@@ -325,11 +326,54 @@ elif page == "AI Models":
         fig.update_layout(template="plotly_dark", height=500)
         st.plotly_chart(fig, use_container_width=True)
 
+    # BiLSTM vs GB comparison scatter
+    lstm_scatter = data.get("lstm_scatter")
+    if lstm_scatter:
+        st.subheader("BiLSTM vs GradientBoosting — RUL Scatter")
+        col_l, col_r = st.columns(2)
+        with col_l:
+            rs = data["rul_scatter"]
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=rs["actual"], y=rs["predicted"], mode="markers",
+                                     marker=dict(size=3, color="#8b5cf6", opacity=0.5),
+                                     name="GradientBoosting"))
+            max_val = max(max(rs["actual"]), max(rs["predicted"]))
+            fig.add_trace(go.Scatter(x=[0, max_val], y=[0, max_val], mode="lines",
+                                     line=dict(dash="dash", color="#ef4444"), name="Perfect"))
+            fig.update_layout(template="plotly_dark", height=400,
+                              title="GB RUL: Actual vs Predicted (Baseline)",
+                              xaxis_title="Actual", yaxis_title="Predicted")
+            st.plotly_chart(fig, use_container_width=True)
+        with col_r:
+            ls = lstm_scatter
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=ls["actual"], y=ls["predicted"], mode="markers",
+                                     marker=dict(size=3, color="#3b82f6", opacity=0.5),
+                                     name="BiLSTM"))
+            max_val = max(max(ls["actual"]), max(ls["predicted"]))
+            fig.add_trace(go.Scatter(x=[0, max_val], y=[0, max_val], mode="lines",
+                                     line=dict(dash="dash", color="#ef4444"), name="Perfect"))
+            fig.update_layout(template="plotly_dark", height=400,
+                              title="BiLSTM RUL: Actual vs Predicted (Proposed)",
+                              xaxis_title="Actual", yaxis_title="Predicted")
+            st.plotly_chart(fig, use_container_width=True)
+
+    # Model Comparison Benchmark Table
+    comparison = mm.get("comparison", [])
+    if comparison:
+        st.subheader("📊 Model Comparison Benchmark (Paper Table)")
+        df_cmp = pd.DataFrame(comparison)
+        st.dataframe(df_cmp, use_container_width=True, height=200)
+
     # Pipeline architecture
-    st.subheader("Pipeline Architecture")
+    st.subheader("Enhanced Pipeline Architecture")
     st.code(
-        "CSV + XLSX -> Preprocess -> Isolation Forest -> "
-        "GradientBoosting (RUL) + RandomForest (Fault) -> Alert Engine -> Dashboard",
+        "CSV + XLSX → Preprocess → Isolation Forest →\n"
+        "  ├─ GradientBoosting (RUL Baseline)\n"
+        "  ├─ BiLSTM (RUL Advanced)          ← New\n"
+        "  ├─ RandomForest (Fault Baseline)\n"
+        "  └─ CNN-LSTM (Fault Advanced)      ← New\n"
+        "→ SHAP XAI → Alert Engine → Dashboard",
         language="text"
     )
 
@@ -537,4 +581,123 @@ elif page == "Live Monitoring":
         else:
             st.session_state.stream_active = False
             st.info("End of dataset reached.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE 7: XAI EXPLAINABILITY
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif page == "XAI Explainability":
+    st.title("🧠 XAI — Explainable AI Dashboard")
+    st.markdown(
+        "This page uses **SHAP (SHapley Additive exPlanations)** to reveal *why* the AI "
+        "makes each prediction. Instead of a black box, the model becomes a transparent, "
+        "interpretable engine — critical for industrial safety systems and research papers."
+    )
+
+    # Check if models exist
+    clf_model_path = os.path.join(BASE_DIR, "models", "clf_model.pkl")
+    data_path = os.path.join(BASE_DIR, "data", "RT_PLC_RSFPD.csv")
+
+    if not os.path.exists(clf_model_path):
+        st.error("Classifier model not found. Run `python src/pipeline.py` first.")
+        st.stop()
+
+    # Lazy imports
+    try:
+        import shap  # type: ignore
+        import pickle
+    except ImportError:
+        st.error("SHAP not installed. Run: `pip install shap` in your terminal.")
+        st.stop()
+
+    @st.cache_resource
+    def load_xai_data():
+        """Load model and compute SHAP values (cached)."""
+        sys.path.insert(0, SRC_DIR)
+        from xai_explainer import compute_shap_values
+
+        # Load classifier bundle — use the EXACT feature list the scaler was trained on
+        with open(clf_model_path, "rb") as f:
+            bundle = pickle.load(f)
+        rf_model      = bundle["model"]
+        scaler        = bundle["scaler"]
+        features_list = bundle.get("features", [])  # exact 20-feature list
+
+        # Load raw CSV
+        df_raw = pd.read_csv(data_path)
+
+        # Fill ANY missing derived features with sensible defaults
+        # (IF_Flag and HMI_Alert_Code_enc are created during pipeline preprocessing)
+        for col in features_list:
+            if col not in df_raw.columns:
+                df_raw[col] = 0
+
+        # Use the FULL ordered feature list — matches scaler exactly
+        X_raw    = df_raw[features_list].fillna(0).values
+        X_scaled = scaler.transform(X_raw)
+
+        shap_dict = compute_shap_values(rf_model, X_scaled, features_list, max_samples=150)
+        return shap_dict, df_raw, features_list
+
+    with st.spinner("Computing SHAP values (first load ~20 seconds)..."):
+        try:
+            shap_dict, df_raw, available_features = load_xai_data()
+            shap_loaded = True
+        except Exception as e:
+            st.error(f"Failed to compute SHAP values: {e}")
+            shap_loaded = False
+
+    if shap_loaded:
+        from xai_explainer import (
+            build_shap_bar_fig, build_shap_summary_fig, build_shap_waterfall_fig
+        )
+
+        # ── Section 1: Feature Importance Bar ─────────────────────────────────
+        st.subheader("1. Feature Importance (Mean |SHAP|)")
+        st.markdown(
+            "Ranks each sensor by how much it **on average** influences the fault prediction. "
+            "**Taller bars = more important sensor.** This is the primary figure for your paper."
+        )
+        fig_bar = build_shap_bar_fig(shap_dict)
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+        st.markdown("---")
+
+        # ── Section 2: SHAP Summary Beeswarm ──────────────────────────────────
+        st.subheader("2. SHAP Summary Plot (Beeswarm)")
+        st.markdown(
+            "Each **dot** = one data sample for one feature. "
+            "**Red dots** = high sensor value. **Blue dots** = low sensor value. "
+            "Dots to the **right** = that feature INCREASED the fault probability. "
+            "Dots to the **left** = that feature REDUCED the fault probability."
+        )
+        fig_bee = build_shap_summary_fig(shap_dict, max_points=100)
+        st.plotly_chart(fig_bee, use_container_width=True)
+
+        st.markdown("---")
+
+        # ── Section 3: Single Prediction Waterfall ─────────────────────────────
+        st.subheader("3. Single Prediction Explanation (Waterfall)")
+        st.markdown(
+            "Select a specific data point to see **exactly how each sensor reading** "
+            "pushed the AI's prediction up or down. "
+            "🔴 Red bars = pushed toward fault. 🔵 Blue bars = pushed away from fault."
+        )
+
+        n_samples = shap_dict["n_samples"]
+        sample_idx = st.slider("Select data point index", 0, n_samples - 1, 0)
+
+        # Get predicted label for this sample
+        with open(clf_model_path, "rb") as f:
+            bundle_wf = pickle.load(f)
+        rf_wf = bundle_wf["model"]
+        le_wf = bundle_wf["label_encoder"]
+        X_sample_row = shap_dict["X_sample"][sample_idx:sample_idx+1]
+        pred_enc = rf_wf.predict(X_sample_row)[0]
+        pred_label = le_wf.inverse_transform([pred_enc])[0]
+
+        st.info(f"Predicted fault for sample #{sample_idx}: **{pred_label}**")
+        fig_wf = build_shap_waterfall_fig(shap_dict, sample_idx, pred_label)
+        st.plotly_chart(fig_wf, use_container_width=True)
 
