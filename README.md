@@ -12,13 +12,13 @@ railway_fault_detection/
 ├── src/                           # Source modules
 │   ├── preprocess.py              # Data loading, cleaning, feature engineering
 │   ├── anomaly_model.py           # Isolation Forest (IF=200, contamination=0.08)
-│   ├── rul_model.py               # Gradient Boosting (n_est=300, lr=0.05, depth=5)
-│   ├── classifier.py              # Random Forest (n_est=300, depth=12, balanced)
-│   ├── lstm_rul_model.py          # BiLSTM RUL predictor (optional, TensorFlow)
-│   ├── cnn_lstm_model.py          # CNN-LSTM fault classifier (optional, TensorFlow)
-│   ├── alerts.py                  # Alert engine + maintenance rules
+│   ├── rul_model.py               # Baseline RUL model (Gradient Boosting)
+│   ├── classifier.py              # Baseline fault classifier (Random Forest)
+│   ├── lstm_rul_model.py          # PRIMARY BiLSTM RUL predictor (Keras)
+│   ├── cnn_lstm_model.py          # PRIMARY CNN-LSTM fault classifier (Keras)
+│   ├── alerts.py                  # Alert engine (uses Primary DL predictions)
 │   ├── xai_explainer.py           # SHAP-based explainability module
-│   └── pipeline.py                # End-to-end orchestrator + dashboard builder
+│   └── pipeline.py                # End-to-end orchestrator (Primary DL prioritized)
 ├── models/                        # Trained models (.pkl)
 ├── outputs/                       # Generated artifacts
 │   ├── railway_dashboard.html     # Interactive HTML dashboard (5 tabs)
@@ -222,13 +222,13 @@ fig.show()
 ├── src/                          # Core ML modules
 │   ├── preprocess.py             # Data pipeline
 │   ├── anomaly_model.py          # Isolation Forest
-│   ├── rul_model.py              # Gradient Boosting RUL ⭐
-│   ├── classifier.py             # Random Forest ⭐
-│   ├── lstm_rul_model.py         # BiLSTM (advanced)
-│   ├── cnn_lstm_model.py         # CNN-LSTM (advanced)
+│   ├── rul_model.py              # Gradient Boosting (Baseline)
+│   ├── classifier.py             # Random Forest (Baseline)
+│   ├── lstm_rul_model.py         # BiLSTM (Primary) ⭐
+│   ├── cnn_lstm_model.py         # CNN-LSTM (Primary) ⭐
 │   ├── alerts.py                 # Alert engine
 │   ├── xai_explainer.py          # SHAP explainability
-│   └── pipeline.py               # Orchestrator
+│   └── pipeline.py               # Orchestrator (Deep Learning focus)
 ├── models/                       # Trained artifacts
 │   ├── isolation_forest.pkl
 │   ├── rul_model.pkl

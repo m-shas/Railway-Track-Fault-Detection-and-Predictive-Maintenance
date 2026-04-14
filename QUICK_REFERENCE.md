@@ -151,7 +151,7 @@ print(f"Accuracy: {accuracy:.1%}")
 labels, confidence, descriptions = predict_fault(model, scaler, encoders["Failure_Type"], df)
 ```
 
-### 4. BiLSTM RUL Prediction (Advanced)
+### 4. BiLSTM RUL Prediction (Primary) ⭐
 
 ```python
 from src.lstm_rul_model import train_lstm_rul_model, predict_rul_lstm
@@ -164,7 +164,7 @@ print(f"BiLSTM MAE: {metrics['mae']:.2f} days")
 predictions = predict_rul_lstm(model, scaler, df)
 ```
 
-### 5. CNN-LSTM Classifier (Advanced)
+### 5. CNN-LSTM Classifier (Primary) ⭐
 
 ```python
 from src.cnn_lstm_model import train_cnn_lstm_classifier, predict_fault_cnn_lstm
