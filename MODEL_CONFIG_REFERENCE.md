@@ -4,206 +4,27 @@
 
 Complete hyperparameter and configuration specification for all models in the Railway Track Fault Detection system.
 
-## Production Models ⭐
+### Primary Production Models ⭐
 
-### 1. Isolation Forest (Anomaly Detection)
+### 1. BiLSTM RUL Prediction (Primary)
+**Module:** `src/lstm_rul_model.py` (Lines 11-30, 56-150)
+**Configuration:** Sequence-to-one regression with Bi-directional LSTM for RUL.
 
+### 2. CNN-LSTM Hybrid Fault Classifier (Primary)
+**Module:** `src/cnn_lstm_model.py` (Lines 13-32, 56-150)
+**Configuration:** Spatiotemporal pattern extraction for 10-class fault diagnosis.
+
+### 3. Isolation Forest (Anomaly Detection)
 **Module:** `src/anomaly_model.py` (Lines 14-19, 32-45)
-
-**Purpose:** Detect anomalous sensor readings in real-time
-
-**Configuration:**
-```python
-CONTAMINATION = 0.08              # Expected anomaly fraction (8%)
-N_ESTIMATORS = 200                # Number of isolation trees
-RANDOM_STATE = 42                 # Reproducibility seed
-```
-
-**Input Features (8 total):**
-```python
-ANOMALY_FEATURES = [
-    "Vibration_m_s2",             # Sensor vibration amplitude
-    "Temperature_C",              # Track/component temperature
-    "Track_Resistance_Ohm",       # Electrical resistance
-    "PLC_CPU_Load_percent",       # PLC processor load
-    "Edge_Anomaly_Score",         # Edge device anomaly flag
-    "Predicted_Failure_Prob",     # ML-predicted failure probability
-    "Humidity_percent",           # Environmental humidity
-    "Component_Age_days",         # Component service life in days
-]
-```
-
-**Training Process:**
-- Scaling: StandardScaler (fit on full dataset)
-- Split: No split (trains on all data for unsupervised learning)
-- Parallel: `n_jobs=-1` (all CPU cores)
-
-**Hyperparameters in Code:**
-```python
-model = IsolationForest(
-    n_estimators=200,
-    contamination=0.08,
-    random_state=42,
-    n_jobs=-1,
-)
-```
-
-**Performance (April 2026):**
-- Anomalies detected: 400 / 5000 (8.0%)
-- Precision: 0.820 (false positive rate controlled)
-- Inference: <5ms per record
+**Configuration:** Real-time anomaly filtering (contamination=0.08).
 
 ---
 
-### 2. Gradient Boosting Regressor (RUL Prediction) ⭐
+## Baseline Comparison Models 📊
+(Controlled by `TRAIN_BASELINES = False` in `src/pipeline.py`)
 
-**Module:** `src/rul_model.py` (Lines 25-45, 63-105)
-
-**Purpose:** Predict Remaining Useful Life (days until maintenance needed)
-
-**Configuration:**
-```python
-RANDOM_STATE = 42
-TEST_SIZE = 0.20                  # 80-20 train-test split
-```
-
-**Gradient Boosting Parameters:**
-```python
-n_estimators: 300                 # Boosting iterations
-learning_rate: 0.05               # Gradient step size (eta)
-max_depth: 5                       # Tree depth (prevent overfitting)
-random_state: 42                  # Reproducibility
-```
-
-**Input Features (19 total):**
-```python
-RUL_FEATURES = [
-    "Vibration_m_s2", "Temperature_C", "Humidity_percent",
-    "Track_Resistance_Ohm", "PLC_CPU_Load_percent",
-    "Edge_Anomaly_Score", "Predicted_Failure_Prob",
-    "Cloud_Health_Index", "Component_Age_days",
-    "Voltage_V", "Current_A", "Timer_TON_ms", "Timer_TCH_ms",
-    "Signal_Transition_Delay_ms", "Block_Clearance_Time_s",
-    "Train_Headway_s", "Ambient_Temp_C", "Dust_Index_ppm",
-    "IF_Flag",  # From Phase 3 anomaly detection
-]
-```
-
-**Output:**
-```python
-RUL_TARGET = "RUL_Predicted_days"  # Continuous value (1-500 days)
-```
-
-**Training Process:**
-- Scaling: MinMaxScaler (fit on training set)
-- Split: Time-based split (shuffle=False, no temporal leakage)
-- Train indices: 0 to 4000 (80%)
-- Test indices: 4000 to 5000 (20%)
-
-**Hyperparameters in Code:**
-```python
-model = GradientBoostingRegressor(
-    n_estimators=300,
-    learning_rate=0.05,
-    max_depth=5,
-    random_state=42,
-)
-```
-
-**Performance (April 2026):**
-- MAE: 10.91 days
-- RMSE: 13.71 days
-- R²: 0.8978 (89.78% variance explained)
-- Training time: 8-10 seconds
-- Inference: <1ms per record
-
-**Top-5 Feature Importances:**
-1. Component_Age_days: 50.90%
-2. Predicted_Failure_Prob: 37.05%
-3. Vibration_m_s2: 5.31%
-4. Track_Resistance_Ohm: 1.74%
-5. Temperature_C: 1.20%
-
----
-
-### 3. Random Forest Classifier (Fault Detection) ⭐
-
-**Module:** `src/classifier.py` (Lines 20-45, 70-110)
-
-**Purpose:** Classify equipment faults into 10 maintenance categories (C1-C10)
-
-**Configuration:**
-```python
-RANDOM_STATE = 42
-TEST_SIZE = 0.20                  # 80-20 train-test split
-N_FAULT_CLASSES = 10              # C1 through C10
-```
-
-**Random Forest Parameters:**
-```python
-n_estimators: 300                 # Number of decision trees
-max_depth: 12                      # Tree depth
-class_weight: 'balanced'           # Handle class imbalance
-random_state: 42                   # Reproducibility
-n_jobs: -1                         # Parallel on all cores
-```
-
-**Input Features (20 total):**
-```python
-CLF_FEATURES = [
-    "Vibration_m_s2", "Temperature_C", "Humidity_percent",
-    "Track_Resistance_Ohm", "PLC_CPU_Load_percent",
-    "Edge_Anomaly_Score", "Predicted_Failure_Prob",
-    "Cloud_Health_Index", "Component_Age_days",
-    "Voltage_V", "Current_A", "Timer_TON_ms", "Timer_TCH_ms",
-    "Signal_Transition_Delay_ms", "Block_Clearance_Time_s",
-    "Train_Headway_s", "Ambient_Temp_C", "Dust_Index_ppm",
-    "IF_Flag",  # From Phase 3
-    "HMI_Alert_Code_enc",  # Encoded categorical
-]
-```
-
-**Output:**
-```python
-CLF_TARGET = "Failure_Type_enc"    # Encoded C1-C10 (0-9)
-```
-
-**Training Process:**
-- Scaling: StandardScaler (fit on training set)
-- Split: Stratified split (preserve class distribution)
-- Train indices: 4000 samples
-- Test indices: 1000 samples
-
-**Hyperparameters in Code:**
-```python
-model = RandomForestClassifier(
-    n_estimators=300,
-    max_depth=12,
-    class_weight='balanced',
-    random_state=42,
-    n_jobs=-1,
-)
-```
-
-**Performance (April 2026):**
-- Accuracy: 99.6%
-- Confusion matrix: 10×10 (all classes)
-- Training time: 5-8 seconds
-- Inference: <3ms per record
-
-**Fault Classes (C1-C10):**
-| Code | Type | Maintenance Action |
-|------|------|-------------------|
-| C1 | Rail Crack / Fracture | Immediate replacement; speed ≤20km/h |
-| C2 | Loose Fastener / Joint | Tighten/replace; inspect adjacent |
-| C3 | Short Circuit Track | Check resistance; inspect bonding |
-| C4 | Ballast Degradation | Re-tamp; schedule geometry fix |
-| C5 | Thermal Buckling | Apply de-stressing; monitor temp |
-| C6 | Gauge Widening | Re-gauge; inspect sleeper anchors |
-| C7 | Wheel Impact Damage | Profile grinding; inspect rail |
-| C8 | Signalling Relay Fault | Replace module; test interlocking |
-| C9 | PLC / CPU Overload | Restart PLC; review scan timing |
-| C10 | Corrosion / Rust | Anti-corrosion treatment; replace |
+### 4. Gradient Boosting Regressor (RUL Baseline)
+### 5. Random Forest Classifier (Fault Baseline)
 
 ---
 

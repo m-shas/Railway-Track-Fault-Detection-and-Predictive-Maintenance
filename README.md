@@ -41,16 +41,14 @@ pip install -r requirements.txt
 ```bash
 python src/pipeline.py
 ```
-This trains all models in 8 phases:
+This trains the primary models and generates dashboard data:
 - **Phase 1-2:** Data preprocessing and feature engineering (5000 rows → 38 features)
 - **Phase 3:** Isolation Forest anomaly detection (IF_Flag, IF_Score) — 8% detection rate
-- **Phase 4a:** Gradient Boosting RUL prediction ⭐ (MAE: 10.91 days, R²: 0.8978)
-- **Phase 4b:** BiLSTM RUL prediction (Advanced) — 30 epochs, 175s training
-- **Phase 5a:** Random Forest fault classifier ⭐ (Accuracy: 99.6%, C1-C10 classes)
-- **Phase 5b:** CNN-LSTM fault classifier (Advanced) — Hybrid sequence model
-- **Phase 6:** Alert generation (CRITICAL/WARNING/HEALTHY) — 4,183 alerts generated
-- **Phase 7:** Dashboard generation (HTML 149KB + JSON 221KB + CSV export)
-- **Phase 8:** (Automatic) Advanced models if TensorFlow installed
+- **Phase 4:** **BiLSTM RUL prediction (PRIMARY)** ⭐ — Advanced sequence-to-one regression
+- **Phase 5:** **CNN-LSTM fault classifier (PRIMARY)** ⭐ — Hybrid spatiotemporal architecture
+- **Phase 6-7:** (Optional) Gradient Boosting & Random Forest baseline comparison
+- **Phase 8:** Dashboard generation (HTML/JSON/CSV) and Alert Engine execution
+
 
 ### 3. View Dashboard
 Open `outputs/railway_dashboard.html` in any browser.
@@ -60,11 +58,15 @@ Open `outputs/railway_dashboard.html` in any browser.
 python -m pytest tests/ -v --tb=short
 ```
 
-### 5. Streamlit Dashboard (Optional)
+### 5. Streamlit Dashboard (Live AI Monitoring)
 ```bash
-pip install streamlit plotly
 streamlit run app.py
 ```
+The Streamlit dashboard now features **Live AI Inference**:
+- **Real-time Prediction**: Deep learning models (BiLSTM/CNN-LSTM) compute RUL and Fault types live as data streams.
+- **Sequence Buffering**: The system maintains a 30-step sliding window buffer for full spatiotemporal analysis.
+- **Dynamic Alerts**: Inference results instantly trigger maintenance recommendations in the "Live Monitoring" tab.
+
 
 ## Models
 
@@ -72,11 +74,12 @@ streamlit run app.py
 
 | Model | Algorithm | Purpose | Training Time | Memory | Status |
 |-------|-----------|---------|----------------|--------|--------|
-| **Isolation Forest** | Unsupervised Ensemble | Real-time anomaly detection | <1 sec | <20MB | ✅ Production |
-| **Gradient Boosting** ⭐ | Supervised Ensemble | RUL prediction (remaining days) | 5-10 sec | <30MB | ✅ Production |
-| **Random Forest** ⭐ | Supervised Ensemble | 10-class fault classification | 5-8 sec | <25MB | ✅ Production |
-| BiLSTM (Advanced) | Bidirectional LSTM | RUL prediction (sequence model) | 175 sec | ~50MB | 🧪 Research |
-| CNN-LSTM (Advanced) | Hybrid CNN-LSTM | Fault classification (hybrid model) | 24 sec | ~80MB | 🧪 Research |
+| **BiLSTM** ⭐ | Bidirectional LSTM | Primary RUL prediction | ~175 sec | ~50MB | ✅ Production |
+| **CNN-LSTM** ⭐ | Hybrid CNN-LSTM | Primary fault classification | ~24 sec | ~80MB | ✅ Production |
+| Isolation Forest | Unsupervised Ensemble | Real-time anomaly detection | <1 sec | <20MB | ✅ Production |
+| Gradient Boosting | Supervised Ensemble | RUL baseline (comparison) | 5-10 sec | <30MB | 📊 Comparison |
+| Random Forest | Supervised Ensemble | Fault baseline (comparison) | 5-8 sec | <25MB | 📊 Comparison |
+
 
 ### Model Hyperparameters
 
@@ -160,8 +163,9 @@ output: Dense(64) → Dense(10, softmax)  # 10-class softmax
 | **Memory** | ~50MB | ~80MB |
 | **Status** | 🧪 Research stage | 🧪 Research stage |
 
-> **⭐ Production Ready:** Gradient Boosting (RUL) + Random Forest (Classifier) 
-> **Note:** BiLSTM & CNN-LSTM models need hyperparameter tuning for improved performance. Data quality and class balance significantly impact accuracy.
+> **⭐ Production Primary:** BiLSTM (RUL) + CNN-LSTM (Classifier).
+> **📊 Comparison Baselines:** Gradient Boosting + Random Forest (Training toggled via `TRAIN_BASELINES` in `pipeline.py`).
+
 
 ## Alert Levels
 

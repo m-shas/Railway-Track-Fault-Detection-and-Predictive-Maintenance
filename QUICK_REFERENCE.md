@@ -37,12 +37,13 @@ python src/pipeline.py
 # Expected output:
 # [1/8] Preprocessing data...
 # [2/8] Training Isolation Forest...
-# [3/8] Training Gradient Boosting RUL...
-# [4/8] Training BiLSTM RUL...
-# [5/8] Training RandomForest Classifier...
-# [6/8] Training CNN-LSTM Classifier...
-# [7/8] Generating alert log...
+# [3/8] Training BiLSTM RUL model (PRIMARY)...
+# [4/8] Training CNN-LSTM fault classifier (PRIMARY)...
+# [5/8] Skipping GradientBoosting (Baseline)...
+# [6/8] Skipping RandomForest (Baseline)...
+# [7/8] Generating alert log (using Deep Learning predictions)...
 # [8/8] Building dashboard data...
+
 # [OK] PIPELINE COMPLETE
 
 # Runtime: ~5-10 minutes (depending on CPU)
@@ -208,17 +209,16 @@ open outputs/railway_dashboard.html
 # - Real-time health scores, model comparisons
 ```
 
-### Option 2: Streamlit Dashboard (Secondary)
+### Option 2: Streamlit Dashboard (Live AI Inference)
 ```bash
-# Install (if not already)
-pip install streamlit plotly
-
-# Run interactive dashboard
 streamlit run app.py
-
-# Opens at http://localhost:8501
-# Features: Interactive filters, real-time updates
 ```
+
+**Features:**
+- **Live Monitoring**: Real-time sensor stream with 30-step temporal buffering.
+- **Deep Learning Inference**: live BiLSTM & CNN-LSTM model predictions.
+- **Dynamic Alerts**: Rule-based maintenance tickets generated on-the-fly.
+
 
 ### Option 3: Jupyter Notebook (Development)
 ```bash
@@ -238,11 +238,12 @@ print(df.info())
 
 | Model | purpose | Metric | Value | Status |
 |-------|---------|--------|-------|--------|
-| **Isolation Forest** | Anomaly Detection | Precision | 82% | ✅ Production |
-| **Gradient Boosting** | RUL Prediction | MAE | 10.91 days | ✅ Production |
-| **Random Forest** | Fault Classify | Accuracy | 99.6% | ✅ Production |
-| BiLSTM | RUL (Advanced) | MAE | 37.39 days | 🧪 Research |
-| CNN-LSTM | Fault (Advanced) | Accuracy | 21.6% | 🧪 Research |
+| **BiLSTM** | RUL Prediction | MAE | 37.39 days | ✅ Primary |
+| **CNN-LSTM** | Fault Classify | Accuracy | 21.6% | ✅ Primary |
+| **Isolation Forest** | Anomaly Detection | Precision | 82% | ✅ Primary |
+| Gradient Boosting | RUL (Baseline) | MAE | 10.91 days | 📊 Compare |
+| Random Forest | Fault (Baseline) | Accuracy | 99.6% | 📊 Compare |
+
 
 ---
 

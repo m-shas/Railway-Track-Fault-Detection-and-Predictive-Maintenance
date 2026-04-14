@@ -361,14 +361,16 @@ elif page == "AI Models":
     with col_metrics2:
         st.markdown("##### Gradient Boosting (BASELINE)")
         gb_metrics = mm.get("rul", {})
-        if gb_metrics:
+        if gb_metrics and gb_metrics.get("train_time_s", 0.0) > 0:
             c1, c2, c3 = st.columns(3)
             c1.metric("MAE", f"{gb_metrics.get('mae', 'N/A'):.2f}d" if isinstance(gb_metrics.get('mae'), (int, float)) else "N/A", delta="10.91d ⭐")
             c2.metric("R² Score", f"{gb_metrics.get('r2', 'N/A'):.4f}" if isinstance(gb_metrics.get('r2'), (int, float)) else "N/A", delta="0.8978")
             c3.metric("Training Time", f"{gb_metrics.get('train_time_s', 'N/A')}s")
             
             st.write(f"**RMSE**: {gb_metrics.get('rmse', 'N/A'):.2f}d" if isinstance(gb_metrics.get('rmse'), (int, float)) else "**RMSE**: N/A")
-            st.write("**Status**: ✅ Production Ready")
+            st.write("**Status**: ✅ Production Ready (Baseline)")
+        else:
+            st.info("Baseline training skipped to prioritize BiLSTM execution.")
     
     # ── FAULT CLASSIFICATION SECTION ────────────────────────────────────
     st.divider()
@@ -390,13 +392,13 @@ elif page == "AI Models":
     with col_clf2:
         st.markdown("##### Random Forest (BASELINE)")
         clf_acc = mm.get("classifier_accuracy")
-        if clf_acc:
+        if clf_acc and clf_acc > 0.0:
             st.metric("Accuracy", f"{clf_acc*100:.1f}%", delta="99.6% ⭐")
             st.write(f"**Classes**: 10 (C1-C10)")
             st.write(f"**N_Estimators**: 300")
-            st.write(f"**Status**: ✅ Production Ready")
+            st.write(f"**Status**: ✅ Production Ready (Baseline)")
         else:
-            st.info("Classifier not trained yet.")
+            st.info("Baseline training skipped to prioritize CNN-LSTM execution.")
     
     # ── RUL SCATTER PLOTS ──────────────────────────────────────────────
     st.divider()
@@ -746,6 +748,24 @@ elif page == "Live Monitoring":
         st.session_state.current_idx = np.random.randint(0, len(df_sim) - 100)
     if "current_row" not in st.session_state:
         st.session_state.current_row = None
+    if "live_buffer" not in st.session_state:
+        st.session_state.live_buffer = []  # Sliding window of 30 frames for LSTM
+    
+    @st.cache_resource
+    def get_live_models():
+        try:
+            from lstm_rul_model import load_lstm_model
+            from cnn_lstm_model import load_cnn_lstm_model
+            lstm_bdl = load_lstm_model()
+            cnn_bdl = load_cnn_lstm_model()
+            return lstm_bdl, cnn_bdl
+        except Exception as e:
+            return None, None
+            
+    lstm_bundle, cnn_bundle = get_live_models()
+    if lstm_bundle is None or cnn_bundle is None:
+        st.error("BiLSTM or CNN-LSTM models not found! Run pipeline to train them.")
+        st.stop()
 
     # Stream controls
     col1, col2, col3 = st.columns([1, 1, 3])
@@ -763,11 +783,14 @@ elif page == "Live Monitoring":
             st.rerun()
 
     if st.session_state.stream_active:
-        st.markdown('<span class="live-text">● STREAMING LIVE...</span>', unsafe_allow_html=True)
+        if len(st.session_state.live_buffer) < 30:
+            st.markdown(f'<span class="live-text">● BUFFERING SYSTEM... ({len(st.session_state.live_buffer)}/30 seq length)</span>', unsafe_allow_html=True)
+        else:
+            st.markdown('<span class="live-text">● STREAMING LIVE AI INFERENCE...</span>', unsafe_allow_html=True)
     elif len(st.session_state.stream_data) > 0:
         st.markdown('<span style="color:#f59e0b;font-weight:bold;">⏸ PAUSED</span>', unsafe_allow_html=True)
     else:
-        st.info("Click 'Start Feed' to connect to the IoT data bridge.")
+        st.info("Click 'Start Feed' to connect to the IoT data bridge and initialize AI sequence buffer.")
         
     # Placeholders
     chart_placeholder = st.empty()
@@ -822,42 +845,71 @@ elif page == "Live Monitoring":
     # Simulation loop using reruns to preserve interaction
     if st.session_state.stream_active:
         if st.session_state.current_idx < len(df_sim):
-            row = df_sim.iloc[st.session_state.current_idx]
-            st.session_state.current_row = row
+            row_srs = df_sim.iloc[st.session_state.current_idx]
             
-            st.session_state.stream_data.append({
-                "Time": len(st.session_state.stream_data),
-                "Vibration": row["Vibration_m_s2"],
-                "Temperature": row["Temperature_C"]
-            })
+            # Prepare row for buffering (fill missing derived features with 0)
+            row_dict = row_srs.to_dict()
+            for col in cnn_bundle["features"] + lstm_bundle["features"]:
+                if col not in row_dict:
+                    row_dict[col] = 0
             
-            if len(st.session_state.stream_data) > 50:
-                st.session_state.stream_data.pop(0)
-
-            prob = row["Predicted_Failure_Prob"]
-            rul = row["RUL_Predicted_days"]
+            st.session_state.live_buffer.append(row_dict)
+            if len(st.session_state.live_buffer) > 30:
+                st.session_state.live_buffer.pop(0)
             
-            if prob > 0.75 or rul < 15:
-                level = "CRITICAL"
-                color = "#ef4444"
-            elif prob > 0.45 or rul < 60:
-                level = "WARNING"
-                color = "#f59e0b"
-            else:
-                level = "HEALTHY"
-                color = "#10b981"
+            # Predict only if we have full sequence length = 30
+            if len(st.session_state.live_buffer) == 30:
+                buffer_df = pd.DataFrame(st.session_state.live_buffer)
                 
-            if level in ["CRITICAL", "WARNING"]:
-                alert_html = f"""
-                <div style="background:{color}22; border-left:4px solid {color}; padding:12px; margin-bottom:8px; border-radius:4px;">
-                    <strong>[{level}] Block {row['Track_Block_ID']}</strong> — AI Model detects <strong>{row['Failure_Type']}</strong>.<br>
-                    <span style="color:#8899aa; font-size: 0.9em;">Failure Prob: {prob:.2f} | Action Generated: {row['Maintenance_Action']}</span>
-                </div>
-                """
-                st.session_state.recent_alerts.insert(0, alert_html)
-                if len(st.session_state.recent_alerts) > 4:
-                    st.session_state.recent_alerts.pop()
+                # CNN-LSTM Fault Classification
+                X_cnn = cnn_bundle["scaler"].transform(buffer_df[cnn_bundle["features"]].values)
+                cnn_prob = cnn_bundle["model"].predict(X_cnn[np.newaxis, :, :], verbose=0)
+                pred_class_idx = cnn_prob.argmax(axis=1)[0]
+                prob_val_cnn = float(cnn_prob[0][pred_class_idx])
+                failure_type = str(cnn_bundle["label_encoder"].inverse_transform([pred_class_idx])[0])
+                
+                # BiLSTM RUL Prediction
+                X_lstm = lstm_bundle["scaler"].transform(buffer_df[lstm_bundle["features"]].values)
+                rul_val = float(lstm_bundle["model"].predict(X_lstm[np.newaxis, :, :], verbose=0)[0][0])
+                
+                # Update visual display state
+                row_dict["Failure_Type"] = failure_type
+                row_dict["RUL_Predicted_days"] = rul_val
+                row_dict["Predicted_Failure_Prob"] = prob_val_cnn
+                st.session_state.current_row = row_dict
+                
+                st.session_state.stream_data.append({
+                    "Time": len(st.session_state.stream_data),
+                    "Vibration": row_dict["Vibration_m_s2"],
+                    "Temperature": row_dict["Temperature_C"]
+                })
+                if len(st.session_state.stream_data) > 50:
+                    st.session_state.stream_data.pop(0)
+
+                # Alert generation logic using the LIVE predictions
+                if prob_val_cnn > 0.75 or rul_val < 15:
+                    level = "CRITICAL"
+                    color = "#ef4444"
+                elif prob_val_cnn > 0.45 or rul_val < 60:
+                    level = "WARNING"
+                    color = "#f59e0b"
+                else:
+                    level = "HEALTHY"
+                    color = "#10b981"
                     
+                if level in ["CRITICAL", "WARNING"]:
+                    from classifier import FAULT_DESCRIPTIONS
+                    action_txt = FAULT_DESCRIPTIONS.get(failure_type, ("", "Inspect System"))[1]
+                    alert_html = f"""
+                    <div style="background:{color}22; border-left:4px solid {color}; padding:12px; margin-bottom:8px; border-radius:4px;">
+                        <strong>[{level}] Block {row_dict['Track_Block_ID']}</strong> — AI Model detects <strong>{failure_type}</strong>.<br>
+                        <span style="color:#8899aa; font-size: 0.9em;">Failure Prob: {prob_val_cnn:.2f} | Action Generated: {action_txt}</span>
+                    </div>
+                    """
+                    st.session_state.recent_alerts.insert(0, alert_html)
+                    if len(st.session_state.recent_alerts) > 4:
+                        st.session_state.recent_alerts.pop()
+            
             st.session_state.current_idx += 1
             time.sleep(0.5)
             st.rerun()
@@ -875,7 +927,12 @@ elif page == "XAI Explainability":
     st.markdown(
         "This page uses **SHAP (SHapley Additive exPlanations)** to reveal *why* the AI "
         "makes each prediction. Instead of a black box, the model becomes a transparent, "
-        "interpretable engine — critical for industrial safety systems and research papers."
+        "interpretable engine."
+    )
+    st.info(
+        "**Note on Architecture:** The Live Monitoring utilizes the primary **CNN-LSTM** model for deep spatiotemporal fault inference. "
+        "However, because generating real-time SHAP values for complex 3D recurrent neural networks is highly computationally expensive in browser-based live dashboards, "
+        "this XAI module explicitly analyzes the **Random Forest (Baseline)** model to provide rapid, point-in-time comparative explainability."
     )
 
     # Check if models exist

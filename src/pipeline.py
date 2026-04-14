@@ -49,6 +49,7 @@ except ImportError:
     ADVANCED_ML_AVAILABLE = False
 
 ALERT_DOWNSAMPLE = 3  # take every Nth row for dashboard JSON
+TRAIN_BASELINES = False  # Set to False to disable baseline (RF, GB) training
 
 
 def run_pipeline():
@@ -143,16 +144,27 @@ def run_pipeline():
         df["CNN_Fault"] = df["Failure_Type"]
 
     # ── Phase 5: GradientBoosting RUL (BASELINE / comparison) ─────────────
-    print("\n[5/8] Training GradientBoosting RUL model (BASELINE comparison)...")
-    t0 = time.time()
-    rul_model, rul_scaler, rul_metrics, (rul_y_test, rul_y_pred) = train_rul_model(df)
-    rul_metrics["train_time_s"] = round(time.time() - t0, 1)
-    save_rul_model(rul_model, rul_scaler)
+    if TRAIN_BASELINES:
+        print("\n[5/8] Training GradientBoosting RUL model (BASELINE comparison)...")
+        t0 = time.time()
+        rul_model, rul_scaler, rul_metrics, (rul_y_test, rul_y_pred) = train_rul_model(df)
+        rul_metrics["train_time_s"] = round(time.time() - t0, 1)
+        save_rul_model(rul_model, rul_scaler)
+    else:
+        print("\n[5/8] Skipping GradientBoosting RUL model...")
+        rul_model, rul_scaler, rul_metrics = None, None, {"mae": 0.0, "r2": 0.0, "rmse": 0.0, "train_time_s": 0.0}
+        rul_y_test, rul_y_pred = [], []
 
     # ── Phase 6: Random Forest Classifier (BASELINE / comparison) ─────────
-    print("\n[6/8] Training RandomForest fault classifier (BASELINE comparison)...")
-    clf_model, clf_scaler, clf_y_test, clf_y_pred, clf_accuracy = train_classifier(df)
-    save_clf_model(clf_model, clf_scaler, encoders["Failure_Type"])
+    if TRAIN_BASELINES:
+        print("\n[6/8] Training RandomForest fault classifier (BASELINE comparison)...")
+        clf_model, clf_scaler, clf_y_test, clf_y_pred, clf_accuracy = train_classifier(df)
+        save_clf_model(clf_model, clf_scaler, encoders["Failure_Type"])
+    else:
+        print("\n[6/8] Skipping RandomForest fault classifier...")
+        clf_model = None
+        clf_accuracy = 0.0
+        clf_y_test, clf_y_pred = [], []
 
     # ── Phase 7: Alert Engine (using LSTM_RUL + CNN_Fault as primary) ─────
     print("\n[7/8] Generating alert log (using BiLSTM + CNN-LSTM predictions)...")
@@ -270,8 +282,12 @@ def build_dashboard_data(df, vibr_df, alert_log,
 
     # Model metrics
     from sklearn.metrics import confusion_matrix, classification_report
-    cm = confusion_matrix(clf_y_test, clf_y_pred).tolist()
-    clf_report = classification_report(clf_y_test, clf_y_pred, output_dict=True)
+    if len(clf_y_test) > 0:
+        cm = confusion_matrix(clf_y_test, clf_y_pred).tolist()
+        clf_report = classification_report(clf_y_test, clf_y_pred, output_dict=True)
+    else:
+        cm = []
+        clf_report = {}
 
     # Feature importance from classifier
     feat_imp = {}
