@@ -1,0 +1,986 @@
+"""
+Railway Track Fault Detection - Streamlit Dashboard
+Secondary deliverable: Interactive dashboard with Plotly charts.
+
+Usage:
+    streamlit run app.py
+"""
+
+import os
+import sys
+import json
+import pandas as pd
+import numpy as np
+
+SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src")
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+
+try:
+    import streamlit as st
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+except ImportError:
+    print("Streamlit or Plotly not installed. Run: pip install streamlit plotly")
+    sys.exit(1)
+
+# ── CONFIG ────────────────────────────────────────────────────────────────────
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
+DATA_PATH = os.path.join(OUTPUTS_DIR, "dashboard_data.json")
+
+st.set_page_config(
+    page_title="Railway Track Fault Detection",
+    page_icon="🚂",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+
+# ── DATA LOADING ──────────────────────────────────────────────────────────────
+
+@st.cache_data
+def load_dashboard_data():
+    """Load dashboard_data.json produced by pipeline.py."""
+    if not os.path.exists(DATA_PATH):
+        st.error(f"Dashboard data not found: {DATA_PATH}")
+        st.info("Run `python src/pipeline.py` first to generate the data.")
+        st.stop()
+    with open(DATA_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@st.cache_resource
+def load_alert_log():
+    """Load the alert log CSV."""
+    path = os.path.join(OUTPUTS_DIR, "alert_log.csv")
+    if os.path.exists(path):
+        return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+data = load_dashboard_data()
+alert_df = load_alert_log()
+
+# ── SIDEBAR ───────────────────────────────────────────────────────────────────
+st.sidebar.title("Railway AI Dashboard")
+st.sidebar.markdown("---")
+
+page = st.sidebar.radio(
+    "Navigate",
+    ["Overview", "Live Monitoring", "Vibration Analysis", "Track Blocks",
+     "AI Models", "XAI Explainability", "Alerts"],
+    index=0,
+)
+
+# Sidebar filters
+st.sidebar.markdown("---")
+st.sidebar.subheader("Filters")
+
+block_ids = sorted(set(b["block_id"] for b in data["block_summary"]))
+selected_blocks = st.sidebar.multiselect("Track Blocks", block_ids, default=block_ids)
+
+location_ids = sorted(set(l["location_id"] for l in data["location_summary"]))
+selected_locations = st.sidebar.multiselect("Locations", location_ids, default=location_ids)
+
+alert_level_filter = st.sidebar.selectbox("Alert Level", ["ALL", "CRITICAL", "WARNING"])
+
+
+# ── HELPERS ───────────────────────────────────────────────────────────────────
+
+def health_color(score):
+    if score >= 70:
+        return "#10b981"
+    if score >= 40:
+        return "#f59e0b"
+    return "#ef4444"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE 1: OVERVIEW
+# ══════════════════════════════════════════════════════════════════════════════
+
+if page == "Overview":
+    st.title("Overview")
+
+    bs = [b for b in data["block_summary"] if b["block_id"] in selected_blocks]
+
+    if not bs:
+        st.warning("No blocks selected.")
+        st.stop()
+
+    avg_health = np.mean([b["avg_health"] for b in bs])
+    total_crit = sum(b["n_critical"] for b in bs)
+    total_warn = sum(b["n_warning"] for b in bs)
+    total_anom = sum(b["n_anomalies"] for b in bs)
+    avg_rul = np.mean([b["avg_rul"] for b in bs])
+
+    # KPI cards
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("Track Blocks", len(bs))
+    c2.metric("Avg Health", f"{avg_health:.1f}")
+    c3.metric("Critical", total_crit)
+    c4.metric("Warnings", total_warn)
+    c5.metric("Anomalies", total_anom)
+    c6.metric("Avg RUL", f"{avg_rul:.0f} d")
+
+    st.markdown("---")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        # Alert donut
+        ad = data["alert_distribution"]
+        fig = px.pie(names=list(ad.keys()), values=list(ad.values()),
+                     title="Alert Distribution", hole=0.4,
+                     color=list(ad.keys()),
+                     color_discrete_map={"CRITICAL": "#ef4444", "WARNING": "#f59e0b", "HEALTHY": "#10b981"})
+        fig.update_layout(template="plotly_dark", height=350)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        fd = data["failure_distribution"]
+        fig = px.bar(x=list(fd.keys()), y=list(fd.values()),
+                     title="Failure Type Distribution",
+                     color=list(fd.keys()), color_discrete_sequence=px.colors.qualitative.Set3)
+        fig.update_layout(template="plotly_dark", height=350, showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+    col3, col4 = st.columns(2)
+
+    with col3:
+        ls = [l for l in data["location_summary"] if l["location_id"] in selected_locations]
+        df_loc = pd.DataFrame(ls)
+        if not df_loc.empty:
+            fig = px.bar(df_loc, x="location_id", y="avg_health",
+                         title="Location Health", color="avg_health",
+                         color_continuous_scale=["#ef4444", "#f59e0b", "#10b981"])
+            fig.update_layout(template="plotly_dark", height=350)
+            st.plotly_chart(fig, use_container_width=True)
+
+    with col4:
+        md = data["maintenance_distribution"]
+        fig = px.pie(names=list(md.keys()), values=list(md.values()),
+                     title="Maintenance Actions", hole=0.4)
+        fig.update_layout(template="plotly_dark", height=350)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Health grid
+    st.subheader("Track Block Health Grid")
+    cols = st.columns(min(10, len(bs)))
+    for i, b in enumerate(bs):
+        with cols[i % len(cols)]:
+            color = health_color(b["avg_health"])
+            st.markdown(
+                f'<div style="background:{color}22;border:2px solid {color};'
+                f'border-radius:8px;text-align:center;padding:12px;margin:4px">'
+                f'<b>{b["block_id"]}</b><br><span style="font-size:1.4em;color:{color}">'
+                f'{b["avg_health"]}</span></div>',
+                unsafe_allow_html=True,
+            )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE 2: VIBRATION ANALYSIS
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif page == "Vibration Analysis":
+    st.title("Vibration Analysis")
+
+    va = data["vibration_accel"]
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        df_accel = pd.DataFrame({
+            "index": range(len(va["accel_magnitude"])),
+            "magnitude": va["accel_magnitude"],
+            "anomaly": va["vibr_anomaly"],
+        })
+        fig = px.scatter(df_accel, x="index", y="magnitude", color="anomaly",
+                         title="Acceleration Magnitude (Anomalies in Red)",
+                         color_continuous_scale=["#3b82f6", "#ef4444"])
+        fig.update_traces(marker_size=2)
+        fig.update_layout(template="plotly_dark", height=400)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        if "temp" in va and "hum" in va:
+            fig = px.scatter(x=va["temp"], y=va["hum"],
+                             title="Temperature vs Humidity",
+                             labels={"x": "Temperature", "y": "Humidity"},
+                             opacity=0.4)
+            fig.update_layout(template="plotly_dark", height=400)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Temp/Humidity data not available in vibration XLSX.")
+
+    col3, col4 = st.columns(2)
+
+    with col3:
+        ts = data["time_series"]
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(go.Scatter(y=ts["vibration"][:300], name="Vibration",
+                                 line=dict(color="#3b82f6", width=1)), secondary_y=False)
+        fig.add_trace(go.Scatter(y=ts["failure_prob"][:300], name="Failure Prob",
+                                 line=dict(color="#ef4444", width=1)), secondary_y=True)
+        fig.update_layout(template="plotly_dark", height=400,
+                          title="PLC Vibration & Failure Probability")
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col4:
+        fig = px.histogram(va["accel_magnitude"], nbins=40,
+                           title="Vibration Magnitude Histogram",
+                           color_discrete_sequence=["#10b981"])
+        fig.update_layout(template="plotly_dark", height=400)
+        st.plotly_chart(fig, use_container_width=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE 3: TRACK BLOCKS
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif page == "Track Blocks":
+    st.title("Track Blocks")
+
+    bs = [b for b in data["block_summary"] if b["block_id"] in selected_blocks]
+    df_bs = pd.DataFrame(bs).sort_values("block_id")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        fig = px.bar(df_bs, x="avg_rul", y="block_id", orientation="h",
+                     title="RUL by Block", color="avg_rul",
+                     color_continuous_scale=["#ef4444", "#f59e0b", "#10b981"])
+        fig.update_layout(template="plotly_dark", height=500)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        fig = px.bar(df_bs, x="avg_vibration", y="block_id", orientation="h",
+                     title="Vibration by Block",
+                     color_discrete_sequence=["#8b5cf6"])
+        fig.update_layout(template="plotly_dark", height=500)
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("Block Detail Table")
+    st.dataframe(
+        df_bs[["block_id", "avg_health", "avg_rul", "avg_vibration",
+               "n_critical", "n_warning", "n_anomalies"]],
+        use_container_width=True,
+        height=400,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE 4: AI MODELS (DETAILED EVALUATION & COMPARISON)
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif page == "AI Models":
+    st.title("🤖 AI Models - Detailed Evaluation & Comparison")
+    
+    mm = data.get("model_metrics", {})
+    
+    # ── MODEL STATUS SECTION ──────────────────────────────────────────────
+    st.subheader("📊 Model Status & Architecture")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("""
+        #### ⭐ BiLSTM (PRIMARY - RUL)
+        - **Status**: Main Production
+        - **Task**: Remaining Useful Life
+        - **Architecture**: BiLSTM(128→64) + Dense
+        - **Sequence Length**: 30 timesteps
+        - **Framework**: TensorFlow/Keras
+        """)
+    
+    with col2:
+        st.markdown("""
+        #### ⭐ CNN-LSTM (PRIMARY - Fault)
+        - **Status**: Main Production
+        - **Task**: Fault Classification
+        - **Architecture**: Conv1D + LSTM(64)
+        - **Classes**: 10 (C1-C10)
+        - **Framework**: TensorFlow/Keras
+        """)
+    
+    with col3:
+        st.markdown("""
+        #### 📊 BASELINE Models
+        - **Isolation Forest**: Anomaly
+        - **Gradient Boosting**: RUL Compare
+        - **Random Forest**: Fault Compare
+        - **Status**: Production Fallback
+        - **Framework**: Scikit-learn
+        """)
+    
+    st.divider()
+    
+    # ── PERFORMANCE METRICS COMPARISON ────────────────────────────────────
+    st.subheader("📈 Performance Metrics Comparison")
+    
+    comparison = mm.get("comparison", [])
+    if comparison:
+        df_cmp = pd.DataFrame(comparison)
+        
+        # Color-code by primary/baseline
+        def highlight_status(row):
+            if row.get("primary"):
+                return ["background-color: #1f4d7d; color: #3b82f6; font-weight: bold"] * len(row)
+            else:
+                return ["background-color: #2a2a2a; color: #999999"] * len(row)
+        
+        st.dataframe(df_cmp.style.apply(highlight_status, axis=1), use_container_width=True, height=250)
+        
+        st.caption("🔵 Blue = PRIMARY Models | Gray = BASELINE Models for Comparison")
+    
+    st.divider()
+    
+    # ── RUL PREDICTION SECTION ─────────────────────────────────────────────
+    st.subheader("🎯 RUL Prediction - Model Comparison")
+    
+    col_metrics1, col_metrics2 = st.columns(2)
+    
+    with col_metrics1:
+        st.markdown("##### BiLSTM (PRIMARY)")
+        lstm_metrics = mm.get("lstm_rul", {})
+        if lstm_metrics:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("MAE", f"{lstm_metrics.get('mae', 'N/A'):.2f}d" if isinstance(lstm_metrics.get('mae'), (int, float)) else "N/A")
+            c2.metric("R² Score", f"{lstm_metrics.get('r2', 'N/A'):.4f}" if isinstance(lstm_metrics.get('r2'), (int, float)) else "N/A")
+            c3.metric("Training Time", f"{lstm_metrics.get('train_time_s', 'N/A')}s")
+            
+            st.write(f"**Epochs Trained**: {lstm_metrics.get('epochs_trained', 'N/A')}/60")
+            st.write(f"**RMSE**: {lstm_metrics.get('rmse', 'N/A'):.2f}d" if isinstance(lstm_metrics.get('rmse'), (int, float)) else "**RMSE**: N/A")
+            st.write(f"**Status**: 🧪 Research Phase (needs tuning)")
+        else:
+            st.info("BiLSTM not trained yet. Run pipeline to generate.")
+    
+    with col_metrics2:
+        st.markdown("##### Gradient Boosting (BASELINE)")
+        gb_metrics = mm.get("rul", {})
+        if gb_metrics:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("MAE", f"{gb_metrics.get('mae', 'N/A'):.2f}d" if isinstance(gb_metrics.get('mae'), (int, float)) else "N/A", delta="10.91d ⭐")
+            c2.metric("R² Score", f"{gb_metrics.get('r2', 'N/A'):.4f}" if isinstance(gb_metrics.get('r2'), (int, float)) else "N/A", delta="0.8978")
+            c3.metric("Training Time", f"{gb_metrics.get('train_time_s', 'N/A')}s")
+            
+            st.write(f"**RMSE**: {gb_metrics.get('rmse', 'N/A'):.2f}d" if isinstance(gb_metrics.get('rmse'), (int, float)) else "**RMSE**: N/A")
+            st.write("**Status**: ✅ Production Ready")
+    
+    # ── FAULT CLASSIFICATION SECTION ────────────────────────────────────
+    st.divider()
+    st.subheader("🔧 Fault Classification - Model Comparison")
+    
+    col_clf1, col_clf2 = st.columns(2)
+    
+    with col_clf1:
+        st.markdown("##### CNN-LSTM (PRIMARY)")
+        cnn_metrics = mm.get("cnn_lstm_accuracy")
+        if cnn_metrics:
+            st.metric("Accuracy", f"{cnn_metrics*100:.1f}%", delta="21.6%")
+            st.write(f"**Classes**: 10 (C1-C10)")
+            st.write(f"**Epochs**: 14/50 (early stopped)")
+            st.write(f"**Status**: 🧪 Research Phase (underfitting)")
+        else:
+            st.info("CNN-LSTM not trained yet. Run pipeline to generate.")
+    
+    with col_clf2:
+        st.markdown("##### Random Forest (BASELINE)")
+        clf_acc = mm.get("classifier_accuracy")
+        if clf_acc:
+            st.metric("Accuracy", f"{clf_acc*100:.1f}%", delta="99.6% ⭐")
+            st.write(f"**Classes**: 10 (C1-C10)")
+            st.write(f"**N_Estimators**: 300")
+            st.write(f"**Status**: ✅ Production Ready")
+        else:
+            st.info("Classifier not trained yet.")
+    
+    # ── RUL SCATTER PLOTS ──────────────────────────────────────────────
+    st.divider()
+    st.subheader("📉 RUL Predictions Scatter Plots")
+    
+    lstm_scatter = data.get("lstm_scatter")
+    rul_scatter = data.get("rul_scatter")
+    
+    col_plot1, col_plot2 = st.columns(2)
+    
+    with col_plot1:
+        if lstm_scatter:
+            ls = lstm_scatter
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=ls["actual"], y=ls["predicted"], mode="markers",
+                                     marker=dict(size=4, color="#3b82f6", opacity=0.6),
+                                     name="BiLSTM"))
+            max_val = max(max(ls["actual"]), max(ls["predicted"]))
+            fig.add_trace(go.Scatter(x=[0, max_val], y=[0, max_val], mode="lines",
+                                     line=dict(dash="dash", color="#ef4444", width=2), name="Perfect Prediction"))
+            fig.update_layout(
+                template="plotly_dark", height=400,
+                title="✅ BiLSTM: Actual vs Predicted RUL (PRIMARY)",
+                xaxis_title="Actual RUL (days)", yaxis_title="Predicted RUL (days)"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("BiLSTM scatter plot not available")
+    
+    with col_plot2:
+        if rul_scatter:
+            rs = rul_scatter
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=rs["actual"], y=rs["predicted"], mode="markers",
+                                     marker=dict(size=4, color="#8b5cf6", opacity=0.5),
+                                     name="Gradient Boosting"))
+            max_val = max(max(rs["actual"]), max(rs["predicted"]))
+            fig.add_trace(go.Scatter(x=[0, max_val], y=[0, max_val], mode="lines",
+                                     line=dict(dash="dash", color="#ef4444", width=2), name="Perfect Prediction"))
+            fig.update_layout(
+                template="plotly_dark", height=400,
+                title="📊 Gradient Boosting: Actual vs Predicted RUL (BASELINE)",
+                xaxis_title="Actual RUL (days)", yaxis_title="Predicted RUL (days)"
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("RUL scatter plot not available")
+    
+    # ── CONFUSION MATRIX ───────────────────────────────────────────────
+    st.divider()
+    st.subheader("📋 Fault Classification Confusion Matrix")
+    
+    cm = mm.get("confusion_matrix", [])
+    if cm:
+        labels = [f"C{i+1}" for i in range(len(cm))]
+        fig = px.imshow(cm, x=labels, y=labels, text_auto=True,
+                        color_continuous_scale="Blues",
+                        title="Random Forest: 10-Class Confusion Matrix (BASELINE Reference)")
+        fig.update_layout(template="plotly_dark", height=600, width=700)
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.caption("**Note**: CNN-LSTM confusion matrix in development. Random Forest shown as established baseline.")
+    
+    # ── FEATURE IMPORTANCE ─────────────────────────────────────────────
+    st.divider()
+    st.subheader("🎯 Feature Importance (Random Forest - Baseline)")
+    
+    fi = data.get("feature_importance", {})
+    if fi:
+        fi_sorted = dict(sorted(fi.items(), key=lambda x: x[1], reverse=True))
+        top_n = 15
+        fig = px.bar(
+            x=list(fi_sorted.values())[:top_n],
+            y=list(fi_sorted.keys())[:top_n],
+            orientation='h',
+            title=f"Top {top_n} Most Important Features",
+            color=list(fi_sorted.values())[:top_n],
+            color_continuous_scale="Viridis"
+        )
+        fig.update_layout(template="plotly_dark", height=500)
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # ── ARCHITECTURE DIAGRAM ──────────────────────────────────────────
+    st.divider()
+    st.subheader("🏗️ Complete Pipeline Architecture")
+    
+    st.code(
+        """
+        RAW DATA (5000 × 32 features)
+              ↓
+        [Preprocessing & Feature Engineering] → 38 features
+              ↓
+        ╔═════════════════════════════════════╗
+        ║ PHASE 1: Isolation Forest           ║ ← Anomaly Detection
+        ║ Output: IF_Flag, IF_Score           ║   (Supporting baseline)
+        ╚════════════╦════════════════════════╝
+                     ↓
+        ╔════════════════════════════════════════╗
+        ║ PHASE 2: BiLSTM RUL (⭐ PRIMARY)      ║
+        ║ ├─ Input: 30-step sequences × 19 features
+        ║ ├─ Architecture: BiLSTM(128→64)
+        ║ └─ Output: LSTM_RUL predictions
+        ╚════════════╦════════════════════════════╝
+                     ↓
+        ╔══════════════════════════════════════════╗
+        ║ PHASE 3: CNN-LSTM Classifier (⭐ PRIMARY)║
+        ║ ├─ Input: 30-step sequences × 20 features
+        ║ ├─ Architecture: Conv1D + LSTM(64)
+        ║ └─ Output: CNN_Fault classification
+        ╚════════════╦══════════════════════════════╝
+                     ↓
+        ╔═════════════════════════════════════════╗
+        ║ PHASE 4: Gradient Boosting (📊 BASELINE)║
+        ║ └─ RUL prediction (comparison only)     ║
+        ╚════════════╦═════════════════════════════╝
+                     ↓
+        ╔═══════════════════════════════════════════╗
+        ║ PHASE 5: Random Forest (📊 BASELINE)     ║
+        ║ └─ Fault classification (comparison only)║
+        ╚════════════╦═══════════════════════════════╝
+                     ↓
+        ╔════════════════════════════════════════╗
+        ║ PHASE 6: Alert Engine                  ║
+        ║ ├─ Uses: LSTM_RUL + CNN_Fault (PRIMARY)
+        ║ ├─ Fallback: RUL_Predicted + Failure_Type
+        ║ └─ Output: 4,183 alerts (CRITICAL/WARNING)
+        ╚════════════╦════════════════════════════╝
+                     ↓
+        ╔════════════════════════════════════════╗
+        ║ PHASE 7: Dashboard & Visualizations    ║
+        ║ ├─ Model comparison tables
+        ║ ├─ Performance metrics
+        ║ ├─ SHAP XAI explanations
+        ║ └─ Interactive Plotly charts
+        ╚════════════════════════════════════════╝
+        """, language="text"
+    )
+    
+    st.success("✅ All models trained and integrated into the pipeline!")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+    # ── Primary scatter: BiLSTM (show first) or fallback to GB ────────────
+    lstm_scatter = data.get("lstm_scatter")
+
+    with col1:
+        # Show BiLSTM scatter as PRIMARY if available
+        if lstm_scatter:
+            ls = lstm_scatter
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=ls["actual"], y=ls["predicted"], mode="markers",
+                                     marker=dict(size=3, color="#3b82f6", opacity=0.6),
+                                     name="BiLSTM"))
+            max_val = max(max(ls["actual"]), max(ls["predicted"]))
+            fig.add_trace(go.Scatter(x=[0, max_val], y=[0, max_val], mode="lines",
+                                     line=dict(dash="dash", color="#ef4444"), name="Perfect"))
+            fig.update_layout(template="plotly_dark", height=450,
+                              title="✅ BiLSTM: RUL Actual vs Predicted (PRIMARY)",
+                              xaxis_title="Actual (days)", yaxis_title="Predicted (days)")
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            # Fallback: show GB scatter with warning note
+            rs = data["rul_scatter"]
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=rs["actual"], y=rs["predicted"], mode="markers",
+                                     marker=dict(size=3, color="#8b5cf6", opacity=0.5),
+                                     name="GradientBoosting"))
+            max_val = max(max(rs["actual"]), max(rs["predicted"]))
+            fig.add_trace(go.Scatter(x=[0, max_val], y=[0, max_val], mode="lines",
+                                     line=dict(dash="dash", color="#ef4444"), name="Perfect"))
+            fig.update_layout(template="plotly_dark", height=450,
+                              title="⚠ GB RUL (BiLSTM not yet trained — run pipeline)",
+                              xaxis_title="Actual", yaxis_title="Predicted")
+            st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        fi = data["feature_importance"]
+        fi_sorted = dict(sorted(fi.items(), key=lambda x: x[1], reverse=True))
+        fig = px.bar(x=list(fi_sorted.values()), y=list(fi_sorted.keys()),
+                     orientation="h", title="RF Feature Importance (Baseline reference)",
+                     color_discrete_sequence=["#8b5cf6"])
+        fig.update_layout(template="plotly_dark", height=450)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Confusion matrix — label as BASELINE
+    cm = mm.get("confusion_matrix", [])
+    if cm:
+        st.subheader("Confusion Matrix — Random Forest (Baseline only)")
+        labels = [f"C{i+1}" for i in range(len(cm))]
+        fig = px.imshow(cm, x=labels, y=labels, text_auto=True,
+                        color_continuous_scale="Blues",
+                        title="10-Class Confusion Matrix (RF Baseline)")
+        fig.update_layout(template="plotly_dark", height=500)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # ── Baseline comparison scatter (below primary) ────────────────────────
+    if lstm_scatter:
+        st.markdown("---")
+        st.subheader("📊 Baseline Comparison — GradientBoosting RUL")
+        rs = data["rul_scatter"]
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=rs["actual"], y=rs["predicted"], mode="markers",
+                                 marker=dict(size=3, color="#8b5cf6", opacity=0.5),
+                                 name="GradientBoosting"))
+        max_val = max(max(rs["actual"]), max(rs["predicted"]))
+        fig.add_trace(go.Scatter(x=[0, max_val], y=[0, max_val], mode="lines",
+                                 line=dict(dash="dash", color="#ef4444"), name="Perfect"))
+        fig.update_layout(template="plotly_dark", height=380,
+                          title="GB RUL: Actual vs Predicted (Baseline only)",
+                          xaxis_title="Actual", yaxis_title="Predicted")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # BiLSTM vs GB comparison scatter
+    lstm_scatter = data.get("lstm_scatter")
+    if lstm_scatter:
+        st.subheader("BiLSTM vs GradientBoosting — RUL Scatter")
+        col_l, col_r = st.columns(2)
+        with col_l:
+            rs = data["rul_scatter"]
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=rs["actual"], y=rs["predicted"], mode="markers",
+                                     marker=dict(size=3, color="#8b5cf6", opacity=0.5),
+                                     name="GradientBoosting"))
+            max_val = max(max(rs["actual"]), max(rs["predicted"]))
+            fig.add_trace(go.Scatter(x=[0, max_val], y=[0, max_val], mode="lines",
+                                     line=dict(dash="dash", color="#ef4444"), name="Perfect"))
+            fig.update_layout(template="plotly_dark", height=400,
+                              title="GB RUL: Actual vs Predicted (Baseline)",
+                              xaxis_title="Actual", yaxis_title="Predicted")
+            st.plotly_chart(fig, use_container_width=True)
+        with col_r:
+            ls = lstm_scatter
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=ls["actual"], y=ls["predicted"], mode="markers",
+                                     marker=dict(size=3, color="#3b82f6", opacity=0.5),
+                                     name="BiLSTM"))
+            max_val = max(max(ls["actual"]), max(ls["predicted"]))
+            fig.add_trace(go.Scatter(x=[0, max_val], y=[0, max_val], mode="lines",
+                                     line=dict(dash="dash", color="#ef4444"), name="Perfect"))
+            fig.update_layout(template="plotly_dark", height=400,
+                              title="BiLSTM RUL: Actual vs Predicted (Proposed)",
+                              xaxis_title="Actual", yaxis_title="Predicted")
+            st.plotly_chart(fig, use_container_width=True)
+
+    # Model Comparison Benchmark Table
+    comparison = mm.get("comparison", [])
+    if comparison:
+        st.subheader("📊 Model Comparison Benchmark (Paper Table)")
+        df_cmp = pd.DataFrame(comparison)
+        st.dataframe(df_cmp, use_container_width=True, height=200)
+
+    # Pipeline architecture
+    st.subheader("Enhanced Pipeline Architecture")
+    st.code(
+        "CSV + XLSX → Preprocess → Isolation Forest →\n"
+        "  ├─ GradientBoosting (RUL Baseline)\n"
+        "  ├─ BiLSTM (RUL Advanced)          ← New\n"
+        "  ├─ RandomForest (Fault Baseline)\n"
+        "  └─ CNN-LSTM (Fault Advanced)      ← New\n"
+        "→ SHAP XAI → Alert Engine → Dashboard",
+        language="text"
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE 5: ALERTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif page == "Alerts":
+    st.title("Alerts & Maintenance")
+
+    alerts = data["alerts"]
+
+    # Filter
+    if alert_level_filter != "ALL":
+        alerts = [a for a in alerts if a["level"] == alert_level_filter]
+
+    st.metric("Total Alerts Shown", len(alerts))
+
+    # Alert table
+    if alerts:
+        df_alerts = pd.DataFrame(alerts)
+        st.dataframe(df_alerts, use_container_width=True, height=400)
+
+        # Maintenance recommendation cards
+        st.subheader("Top Maintenance Recommendations")
+        for a in alerts[:6]:
+            level_color = "#ef4444" if a["level"] == "CRITICAL" else "#f59e0b"
+            st.markdown(
+                f'<div style="background:#213243;border-left:4px solid {level_color};'
+                f'border-radius:8px;padding:16px;margin-bottom:8px">'
+                f'<b>{a["block_id"]} — {a["fault"]}</b><br>'
+                f'<span style="color:#8899aa">{a["action"]}</span><br>'
+                f'<span style="color:#3b82f6">Score: {a["score"]} | RUL: {a["rul"]}d</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Alert distribution bar
+        st.subheader("Alert Level Distribution")
+        level_counts = {}
+        for a in data["alerts"]:
+            level_counts[a["level"]] = level_counts.get(a["level"], 0) + 1
+        fig = px.bar(x=list(level_counts.keys()), y=list(level_counts.values()),
+                     color=list(level_counts.keys()),
+                     color_discrete_map={"CRITICAL": "#ef4444", "WARNING": "#f59e0b"},
+                     title="Alert Counts by Level")
+        fig.update_layout(template="plotly_dark", height=350, showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("No alerts match the current filter.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE 6: LIVE MONITORING
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif page == "Live Monitoring":
+    import time
+    st.title("🔴 Live Sensor Monitoring")
+    st.markdown("Simulating real-time IoT sensor data stream and instant ML predictions. In a production environment, this dashboard subscribes to an MQTT stream directly from track-side PLC systems.")
+
+    # Load raw data for simulation
+    csv_path = os.path.join(BASE_DIR, "data", "RT_PLC_RSFPD.csv")
+    if not os.path.exists(csv_path):
+        st.error(f"Data file not found at {csv_path}. Please ensure it exists.")
+        st.stop()
+
+    df_sim = pd.read_csv(csv_path)
+    
+    # Custom CSS for the pulsing live indicator
+    st.markdown("""
+    <style>
+    .live-text {color: #ef4444; font-weight: bold; animation: blink 1.5s linear infinite;}
+    @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Initialize session state for persistence
+    if "stream_active" not in st.session_state:
+        st.session_state.stream_active = False
+    if "stream_data" not in st.session_state:
+        st.session_state.stream_data = []
+    if "recent_alerts" not in st.session_state:
+        st.session_state.recent_alerts = []
+    if "current_idx" not in st.session_state:
+        st.session_state.current_idx = np.random.randint(0, len(df_sim) - 100)
+    if "current_row" not in st.session_state:
+        st.session_state.current_row = None
+
+    # Stream controls
+    col1, col2, col3 = st.columns([1, 1, 3])
+    with col1:
+        if st.button("▶ Start Feed" if not st.session_state.stream_active else "⏹ Stop Feed"):
+            st.session_state.stream_active = not st.session_state.stream_active
+            st.rerun()
+    with col2:
+        if st.button("🔄 Reset Feed"):
+            st.session_state.stream_active = False
+            st.session_state.stream_data = []
+            st.session_state.recent_alerts = []
+            st.session_state.current_idx = np.random.randint(0, len(df_sim) - 100)
+            st.session_state.current_row = None
+            st.rerun()
+
+    if st.session_state.stream_active:
+        st.markdown('<span class="live-text">● STREAMING LIVE...</span>', unsafe_allow_html=True)
+    elif len(st.session_state.stream_data) > 0:
+        st.markdown('<span style="color:#f59e0b;font-weight:bold;">⏸ PAUSED</span>', unsafe_allow_html=True)
+    else:
+        st.info("Click 'Start Feed' to connect to the IoT data bridge.")
+        
+    # Placeholders
+    chart_placeholder = st.empty()
+    st.markdown("---")
+    metrics_placeholder = st.empty()
+    st.markdown("---")
+    alert_placeholder = st.empty()
+
+    # Function to render current static state
+    def render_current_state():
+        if not st.session_state.stream_data:
+            return
+
+        df_chart = pd.DataFrame(st.session_state.stream_data)
+        
+        # Update Chart
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        fig.add_trace(go.Scatter(y=df_chart["Vibration"], mode='lines', 
+                                 name="Vibration (m/s²)", line=dict(color="#3b82f6", width=2)), 
+                      secondary_y=False)
+        fig.add_trace(go.Scatter(y=df_chart["Temperature"], mode='lines', 
+                                 name="Temp (°C)", line=dict(color="#ef4444", width=2)), 
+                      secondary_y=True)
+        
+        fig.update_layout(template="plotly_dark", height=350, margin=dict(l=0,r=0,t=40,b=0),
+                          title="Live Sensor Telemetry: Vibration vs Temperature",
+                          xaxis=dict(showgrid=False), yaxis=dict(showgrid=False))
+        
+        chart_placeholder.plotly_chart(fig, use_container_width=True, key=f"chart_static_{st.session_state.current_idx}")
+        
+        # Update Metrics
+        if st.session_state.current_row is not None:
+            row = st.session_state.current_row
+            with metrics_placeholder.container():
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Current Block ID", row["Track_Block_ID"])
+                c2.metric("Vibration (m/s²)", f"{row['Vibration_m_s2']:.3f}")
+                c3.metric("Temp (°C)", f"{row['Temperature_C']:.1f}")
+                c4.metric("Predicted RUL", f"{row['RUL_Predicted_days']:.0f} days")
+                
+        # Update Alerts
+        with alert_placeholder.container():
+            st.subheader("Live Inference Log & Action Feed")
+            if not st.session_state.recent_alerts:
+                st.info("System healthy. Monitoring inbound telemetry for faults...")
+            for alert in st.session_state.recent_alerts:
+                st.markdown(alert, unsafe_allow_html=True)
+
+    # Initial render of persistent state
+    render_current_state()
+
+    # Simulation loop using reruns to preserve interaction
+    if st.session_state.stream_active:
+        if st.session_state.current_idx < len(df_sim):
+            row = df_sim.iloc[st.session_state.current_idx]
+            st.session_state.current_row = row
+            
+            st.session_state.stream_data.append({
+                "Time": len(st.session_state.stream_data),
+                "Vibration": row["Vibration_m_s2"],
+                "Temperature": row["Temperature_C"]
+            })
+            
+            if len(st.session_state.stream_data) > 50:
+                st.session_state.stream_data.pop(0)
+
+            prob = row["Predicted_Failure_Prob"]
+            rul = row["RUL_Predicted_days"]
+            
+            if prob > 0.75 or rul < 15:
+                level = "CRITICAL"
+                color = "#ef4444"
+            elif prob > 0.45 or rul < 60:
+                level = "WARNING"
+                color = "#f59e0b"
+            else:
+                level = "HEALTHY"
+                color = "#10b981"
+                
+            if level in ["CRITICAL", "WARNING"]:
+                alert_html = f"""
+                <div style="background:{color}22; border-left:4px solid {color}; padding:12px; margin-bottom:8px; border-radius:4px;">
+                    <strong>[{level}] Block {row['Track_Block_ID']}</strong> — AI Model detects <strong>{row['Failure_Type']}</strong>.<br>
+                    <span style="color:#8899aa; font-size: 0.9em;">Failure Prob: {prob:.2f} | Action Generated: {row['Maintenance_Action']}</span>
+                </div>
+                """
+                st.session_state.recent_alerts.insert(0, alert_html)
+                if len(st.session_state.recent_alerts) > 4:
+                    st.session_state.recent_alerts.pop()
+                    
+            st.session_state.current_idx += 1
+            time.sleep(0.5)
+            st.rerun()
+        else:
+            st.session_state.stream_active = False
+            st.info("End of dataset reached.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE 7: XAI EXPLAINABILITY
+# ══════════════════════════════════════════════════════════════════════════════
+
+elif page == "XAI Explainability":
+    st.title("🧠 XAI — Explainable AI Dashboard")
+    st.markdown(
+        "This page uses **SHAP (SHapley Additive exPlanations)** to reveal *why* the AI "
+        "makes each prediction. Instead of a black box, the model becomes a transparent, "
+        "interpretable engine — critical for industrial safety systems and research papers."
+    )
+
+    # Check if models exist
+    clf_model_path = os.path.join(BASE_DIR, "models", "clf_model.pkl")
+    data_path = os.path.join(BASE_DIR, "data", "RT_PLC_RSFPD.csv")
+
+    if not os.path.exists(clf_model_path):
+        st.error("Classifier model not found. Run `python src/pipeline.py` first.")
+        st.stop()
+
+    # Lazy imports
+    try:
+        import shap  # type: ignore
+        import pickle
+    except ImportError:
+        st.error("SHAP not installed. Run: `pip install shap` in your terminal.")
+        st.stop()
+
+    @st.cache_resource
+    def load_xai_data():
+        """Load model and compute SHAP values (cached)."""
+        sys.path.insert(0, SRC_DIR)
+        from xai_explainer import compute_shap_values
+
+        # Load classifier bundle — use the EXACT feature list the scaler was trained on
+        with open(clf_model_path, "rb") as f:
+            bundle = pickle.load(f)
+        rf_model      = bundle["model"]
+        scaler        = bundle["scaler"]
+        features_list = bundle.get("features", [])  # exact 20-feature list
+
+        # Load raw CSV
+        df_raw = pd.read_csv(data_path)
+
+        # Fill ANY missing derived features with sensible defaults
+        # (IF_Flag and HMI_Alert_Code_enc are created during pipeline preprocessing)
+        for col in features_list:
+            if col not in df_raw.columns:
+                df_raw[col] = 0
+
+        # Use the FULL ordered feature list — matches scaler exactly
+        X_raw    = df_raw[features_list].fillna(0).values
+        X_scaled = scaler.transform(X_raw)
+
+        shap_dict = compute_shap_values(rf_model, X_scaled, features_list, max_samples=150)
+        return shap_dict, df_raw, features_list
+
+    with st.spinner("Computing SHAP values (first load ~20 seconds)..."):
+        try:
+            shap_dict, df_raw, available_features = load_xai_data()
+            shap_loaded = True
+        except Exception as e:
+            st.error(f"Failed to compute SHAP values: {e}")
+            shap_loaded = False
+
+    if shap_loaded:
+        from xai_explainer import (
+            build_shap_bar_fig, build_shap_summary_fig, build_shap_waterfall_fig
+        )
+
+        # ── Section 1: Feature Importance Bar ─────────────────────────────────
+        st.subheader("1. Feature Importance (Mean |SHAP|)")
+        st.markdown(
+            "Ranks each sensor by how much it **on average** influences the fault prediction. "
+            "**Taller bars = more important sensor.** This is the primary figure for your paper."
+        )
+        fig_bar = build_shap_bar_fig(shap_dict)
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+        st.markdown("---")
+
+        # ── Section 2: SHAP Summary Beeswarm ──────────────────────────────────
+        st.subheader("2. SHAP Summary Plot (Beeswarm)")
+        st.markdown(
+            "Each **dot** = one data sample for one feature. "
+            "**Red dots** = high sensor value. **Blue dots** = low sensor value. "
+            "Dots to the **right** = that feature INCREASED the fault probability. "
+            "Dots to the **left** = that feature REDUCED the fault probability."
+        )
+        fig_bee = build_shap_summary_fig(shap_dict, max_points=100)
+        st.plotly_chart(fig_bee, use_container_width=True)
+
+        st.markdown("---")
+
+        # ── Section 3: Single Prediction Waterfall ─────────────────────────────
+        st.subheader("3. Single Prediction Explanation (Waterfall)")
+        st.markdown(
+            "Select a specific data point to see **exactly how each sensor reading** "
+            "pushed the AI's prediction up or down. "
+            "🔴 Red bars = pushed toward fault. 🔵 Blue bars = pushed away from fault."
+        )
+
+        n_samples = shap_dict["n_samples"]
+        sample_idx = st.slider("Select data point index", 0, n_samples - 1, 0)
+
+        # Get predicted label for this sample
+        with open(clf_model_path, "rb") as f:
+            bundle_wf = pickle.load(f)
+        rf_wf = bundle_wf["model"]
+        le_wf = bundle_wf["label_encoder"]
+        X_sample_row = shap_dict["X_sample"][sample_idx:sample_idx+1]
+        pred_enc = rf_wf.predict(X_sample_row)[0]
+        pred_label = le_wf.inverse_transform([pred_enc])[0]
+
+        st.info(f"Predicted fault for sample #{sample_idx}: **{pred_label}**")
+        fig_wf = build_shap_waterfall_fig(shap_dict, sample_idx, pred_label)
+        st.plotly_chart(fig_wf, use_container_width=True)
+

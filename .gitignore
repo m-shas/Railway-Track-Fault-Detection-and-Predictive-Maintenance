@@ -1,0 +1,22 @@
+# Virtual Environments
+.venv/
+env/
+venv/
+ENV/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Output and temp files
+outputs/
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# If you do not want to upload large datasets, uncomment the following:
+# datasets/vibration_raw.csv
