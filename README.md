@@ -245,9 +245,7 @@ fig.show()
 └── requirements.txt              # Dependencies
 ```
 
-For comprehensive model parameter details, see:
-- **[MODEL_CONFIG_REFERENCE.md](MODEL_CONFIG_REFERENCE.md)** - Complete hyperparameter specifications
-- **[RESEARCH_PAPER.md](RESEARCH_PAPER.md)** - Technical methodology and results
+
 
 ## Fault Classes (C1-C10)
 
